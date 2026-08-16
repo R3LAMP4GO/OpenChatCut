@@ -42,7 +42,7 @@ function normalizeScenarios(values: string[] | undefined): string[] | undefined 
 }
 
 function uniqueOwnedStyleName(requested: string, styles: OwnedStyle[], exceptId?: string): string {
-  const base = requested.trim() || '未命名风格';
+  const base = requested.trim() || 'Untitled Style';
   const names = new Set(styles.filter((style) => style.id !== exceptId).map((style) => style.name));
   if (!names.has(base)) return base;
   let suffix = 2;
@@ -72,7 +72,7 @@ export async function saveOwnedStyle(
   style: DesignStyle,
   metadata: OwnedStyleMetadata = {},
 ): Promise<OwnedStyle> {
-  const trimmed = name.trim() || '未命名风格';
+  const trimmed = name.trim() || 'Untitled Style';
   const current = await loadOwnedStyles();
   const existing = current.find((entry) => entry.name === trimmed);
   const thumbnailUrl = metadata.thumbnailUrl === undefined

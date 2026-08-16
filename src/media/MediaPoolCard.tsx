@@ -3,7 +3,7 @@ import { Icon, type IconName } from '../components/icons';
 import { MusicAnalysisBadge } from '../audio/intelligence/MusicAnalysisBadge';
 import type { MusicAnalysisCardState } from '../audio/intelligence/useMusicAnalysisCards';
 import type { MediaAsset, MediaFolder } from '../editor/types';
-import { useT } from '../i18n/locale';
+import { tData, useT } from '../i18n/locale';
 import { theme } from '../theme';
 import { setMediaAssetDrag } from './drag';
 import { assetIdsFromFolderDrop } from './folderDrop';
@@ -89,7 +89,7 @@ function VideoPoster({ src, name }: { src?: string; name: string }) {
 function AssetPreview({ asset, fps, active, onLoadError, onLoadSuccess }: AssetPreviewProps) {
   const preview = usePreviewMediaSource(asset.kind === 'video' ? asset.src : undefined);
   if (asset.kind === 'image' || asset.kind === 'gif' || asset.kind === 'svg') {
-    return <img src={asset.src} alt={asset.name} draggable={false} onError={() => onLoadError(asset.id)} onLoad={() => onLoadSuccess(asset.id)} />;
+    return <img src={asset.src} alt={tData(asset.name)} draggable={false} onError={() => onLoadError(asset.id)} onLoad={() => onLoadSuccess(asset.id)} />;
   }
   if (asset.kind === 'video') {
     const media = active
@@ -107,7 +107,7 @@ function AssetPreview({ asset, fps, active, onLoadError, onLoadSuccess }: AssetP
           }}
         />
       )
-      : <VideoPoster key={preview.posterSrc} src={preview.posterSrc} name={asset.name} />;
+      : <VideoPoster key={preview.posterSrc} src={preview.posterSrc} name={tData(asset.name)} />;
     return (
       <>
         {media}
@@ -127,6 +127,7 @@ function previewable(asset: MediaAsset): boolean {
 
 export const MediaAssetCard = memo(function MediaAssetCard(props: MediaAssetCardProps) {
   const { asset, missing, onFocusChange, onPointerChange, view } = props;
+  const name = tData(asset.name);
   return (
     <div
       data-cc-media-asset-id={asset.id}
@@ -180,7 +181,7 @@ export const MediaAssetCard = memo(function MediaAssetCard(props: MediaAssetCard
       }}
     >
       <AssetThumbArea {...props} />
-      <button className="cc-asset-name" title={asset.name} tabIndex={-1}>{asset.name}</button>
+      <button className="cc-asset-name" title={name} tabIndex={-1}>{name}</button>
       {!missing && props.musicAnalysis && <MusicAnalysisBadge asset={asset} state={props.musicAnalysis} />}
     </div>
   );
@@ -189,11 +190,12 @@ export const MediaAssetCard = memo(function MediaAssetCard(props: MediaAssetCard
 function AssetThumbArea(props: MediaAssetCardProps) {
   const { asset, active, missing } = props;
   const t = useT();
+  const name = tData(asset.name);
   return (
     <div className="cc-asset-thumb-wrap">
       <button
         className="cc-asset-thumb"
-        title={missing ? t('点击重新链接') : t('单击选中，双击加入时间线，或拖到指定轨道：{name}', { name: asset.name })}
+        title={missing ? t('点击重新链接') : t('单击选中，双击加入时间线，或拖到指定轨道：{name}', { name })}
         style={missing ? undefined : { cursor: 'grab' }}
         onClick={() => { if (missing && props.canRelink) props.onRelink(asset.id); }}
       >
@@ -232,6 +234,7 @@ function MissingMedia() {
 function AssetBadges(props: MediaAssetCardProps) {
   const { asset } = props;
   const t = useT();
+  const name = tData(asset.name);
   const aspectLabel = mediaRatioLabel(asset.width, asset.height);
   return (
     <>
@@ -244,14 +247,14 @@ function AssetBadges(props: MediaAssetCardProps) {
         type="button"
         className="cc-asset-favorite"
         aria-pressed={!!asset.favorite}
-        aria-label={`${asset.favorite ? t('取消收藏') : t('收藏')}：${asset.name}`}
+        aria-label={`${asset.favorite ? t('取消收藏') : t('收藏')}：${name}`}
         title={asset.favorite ? t('取消收藏') : t('收藏')}
         onClick={(event) => {
           event.stopPropagation();
           props.onSetFavorite(asset.id, !asset.favorite);
         }}
       ><Icon name="star" size={14} strokeWidth={1.35} filled={!!asset.favorite} /></button>
-      <button className="cc-asset-more" aria-label={t('管理 {name}', { name: asset.name })} onClick={(event) => {
+      <button className="cc-asset-more" aria-label={t('管理 {name}', { name })} onClick={(event) => {
         event.stopPropagation();
         props.onOpenMenu(asset.id, event.currentTarget);
       }}><Icon name="more" size={17} /></button>

@@ -23,6 +23,10 @@ import type {
   DesktopRhythmResponse,
 } from '../shared/desktop-inference';
 import type {
+  ParakeetInferenceRequest,
+  ParakeetInferenceResponse,
+} from '../shared/parakeet-inference';
+import type {
   DirectoryImportDisposition,
   DirectoryImportEvent,
   DirectoryWatchStartResult,
@@ -42,6 +46,11 @@ interface DesktopUpdateApi {
   install(): Promise<DesktopUpdateState>;
   subscribe(listener: (state: DesktopUpdateState) => void): () => void;
 }
+interface ParakeetInferenceApi {
+  transcribe(request: ParakeetInferenceRequest): Promise<ParakeetInferenceResponse>;
+  cancel(requestId: string): Promise<void>;
+}
+
 interface DesktopInferenceApi {
   getCapabilities(): Promise<DesktopInferenceCapabilities>;
   setEnabled(enabled: boolean): Promise<void>;
@@ -83,6 +92,7 @@ declare global {
       editorCredentials(): Promise<EditorBootstrapInfo>;
       updates: DesktopUpdateApi;
       inference: DesktopInferenceApi;
+      parakeet: ParakeetInferenceApi;
     };
   }
 }

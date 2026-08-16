@@ -155,6 +155,8 @@ export default {
 
   // ---- InspectorPanel:Transform/Volume/Fade/Text ----
   '缩放比例': 'Scale',
+  '横向缩放': 'Horizontal scale',
+  '纵向缩放': 'Vertical scale',
   '水平': 'Horizontal',
   '垂直': 'Vertical',
   '旋转': 'Rotation',

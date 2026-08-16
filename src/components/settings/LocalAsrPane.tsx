@@ -52,6 +52,9 @@ export function LocalAsrPane({ fields, ctx }: { fields: readonly SettingsField[]
   const [nativeInference, setNativeInference] = useState(desktopNativeInferenceEnabled);
   const [desktopInferenceSupported, setDesktopInferenceSupported] = useState(false);
   const [webgpuAccel, setWebgpuAccel] = useState(() => asrBackendPreference() === 'webgpu');
+  const [asrEngine, setAsrEngine] = useState<'whisper' | 'parakeet'>(() => {
+    try { return localStorage.getItem('cc.localAsrEngine') === 'parakeet' ? 'parakeet' : 'whisper'; } catch { return 'whisper'; }
+  });
   useEffect(() => {
     let active = true;
     const inference = window.openChatCutDesktop?.inference;
@@ -160,6 +163,21 @@ export function LocalAsrPane({ fields, ctx }: { fields: readonly SettingsField[]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>Local transcription engine</span>
+        <select value={asrEngine} onChange={(event) => {
+          const next = event.target.value === 'parakeet' ? 'parakeet' : 'whisper';
+          try { localStorage.setItem('cc.localAsrEngine', next); } catch { /* best effort */ }
+          setAsrEngine(next);
+        }}>
+          <option value="whisper">Whisper</option>
+          <option value="parakeet">Parakeet TDT v3 (MLX, English)</option>
+        </select>
+      </label>
+      {asrEngine === 'parakeet' && <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 11.5, color: theme.textDim }}>
+        <span>Desktop-only: each English transcription runs one local Parakeet MLX job and returns word timings.</span>
+        <span>The MLX runtime and model must be installed on this Mac; no network endpoint is used.</span>
+      </div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <VendorIcon vendor="openai" size={16} />
         <span style={{ fontSize: 12, fontWeight: 600 }}>{t('默认模型')}</span>

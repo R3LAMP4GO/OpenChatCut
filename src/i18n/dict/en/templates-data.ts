@@ -25,4 +25,6 @@ export default {
   '口播·牛皮纸圆窗（竖）': 'Talking Head · Kraft Corner (9:16)',
   '口播·羊皮纸（横）': 'Talking Head · Parchment (16:9)',
   '口播·奶油拍立得（竖）': 'Talking Head · Cream Polaroid (9:16)',
+  '纯色': 'Solid color',
+  '旁白.webm': 'Voiceover.webm',
 } as Record<string, string>;

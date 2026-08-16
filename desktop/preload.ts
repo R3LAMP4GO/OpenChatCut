@@ -41,6 +41,14 @@ import {
   type DesktopRhythmResponse,
 } from '../shared/desktop-inference.ts';
 import {
+  PARAKEET_INFERENCE_CHANNELS,
+  isParakeetInferenceResponse,
+  isParakeetInferenceRequestId,
+  parseParakeetInferenceRequest,
+  type ParakeetInferenceRequest,
+  type ParakeetInferenceResponse,
+} from '../shared/parakeet-inference.ts';
+import {
   DIRECTORY_IMPORT_CHANNELS,
   isDirectoryImportEvent,
   isDirectoryWatchStartResult,
@@ -78,6 +86,11 @@ export interface DesktopInferenceApi {
 }
 
 
+export interface ParakeetInferenceApi {
+  transcribe(request: ParakeetInferenceRequest): Promise<ParakeetInferenceResponse>;
+  cancel(requestId: string): Promise<void>;
+}
+
 export interface OpenChatCutDesktopApi {
   getPathForFile(file: File): string | undefined;
   platform: NodeJS.Platform;
@@ -105,6 +118,7 @@ export interface OpenChatCutDesktopApi {
   editorCredentials(): Promise<EditorBootstrapInfo>;
   updates: DesktopUpdateApi;
   inference: DesktopInferenceApi;
+  parakeet: ParakeetInferenceApi;
 }
 
 const localMediaPreloadDependencies: LocalMediaPreloadDependencies<File> = {
@@ -166,6 +180,22 @@ const api: OpenChatCutDesktopApi = {
     ipcRenderer.invoke(PROJECT_STORE_CHANNEL, request) as Promise<ProjectStoreResponse>,
   editorCredentials: () =>
     ipcRenderer.invoke(EDITOR_CREDENTIALS_CHANNEL) as Promise<EditorBootstrapInfo>,
+  parakeet: {
+    transcribe: async (request) => {
+      const value: unknown = await ipcRenderer.invoke(
+        PARAKEET_INFERENCE_CHANNELS.transcribe,
+        parseParakeetInferenceRequest(request),
+      );
+      if (!isParakeetInferenceResponse(value)) throw new Error('invalid Parakeet transcription response');
+      return value;
+    },
+    cancel: (requestId) => {
+      if (!isParakeetInferenceRequestId(requestId)) {
+        return Promise.reject(new Error('invalid Parakeet transcription request id'));
+      }
+      return ipcRenderer.invoke(PARAKEET_INFERENCE_CHANNELS.cancel, requestId) as Promise<void>;
+    },
+  },
   inference: {
     setEnabled: (enabled) =>
       ipcRenderer.invoke(DESKTOP_INFERENCE_CHANNELS.setEnabled, enabled) as Promise<void>,

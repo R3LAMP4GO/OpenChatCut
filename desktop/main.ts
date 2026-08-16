@@ -27,6 +27,7 @@ import { installEditorAuthIpc } from './editor-auth-ipc.ts';
 import { installDesktopUpdateIpc } from './update-ipc.ts';
 import { supportsDirectDesktopUpdates } from './update-service.ts';
 import { installDesktopInferenceIpc } from './native-inference-ipc.ts';
+import { installParakeetIpc } from './parakeet-ipc.ts';
 import { installDirectoryWatchIpc } from './directory-watch-ipc.ts';
 import {
   assertTrustedDesktopSenderUrl,
@@ -377,7 +378,11 @@ async function boot(): Promise<void> {
     origin,
     join(app.getPath('home'), '.openchatcut', 'asr-models'),
   );
-  app.once('before-quit', () => desktopInference.dispose());
+  const parakeet = installParakeetIpc(origin);
+  app.once('before-quit', () => {
+    desktopInference.dispose();
+    parakeet.dispose();
+  });
   console.log(`[desktop] ${devOrigin ? 'live source' : 'embedded server'} at ${origin}`);
 
   const initialBounds = resolveInitialDesktopWindowBounds(screen.getPrimaryDisplay().workArea);

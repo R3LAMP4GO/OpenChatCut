@@ -3,7 +3,7 @@ import type { PlayerRef } from '@remotion/player';
 import type { TimelineItem, TrackId } from '../editor/types';
 import { emitSelectionRef, transcriptRefFromDomSelection, useSelectionRefMode } from '../agent/selection-refs';
 import { useTranscript } from './useTranscript';
-import { preferredTranscriptionProvider } from './provider';
+import { preferredTranscriptionProvider, setPreferredTranscriptionProvider } from './provider';
 import { hasOperationalTranscript, msToFrame, type TranscriptWord } from './types';
 import { analyzeSilences } from './segment';
 import { ScriptView } from './TranscriptViews';
@@ -28,6 +28,7 @@ interface TranscriptPanelProps {
   onReorderTrackItems: (track: TrackId, orderedIds: string[]) => void;
   onClearEdits: (id: string) => void;
   onImportSrt: (file: File) => void;
+  /** Creates captions from successfully transcribed clips, then opens their controls. */
   onOpenCaptionStyles?: (sourceItemIds: string[]) => void;
 }
 
@@ -40,7 +41,9 @@ export function TranscriptPanel({
 }: TranscriptPanelProps) {
   const t = useT();
   const { status, error, progressNote, runMany, reset } = useTranscript();
+  const [, setProviderRevision] = useState(0);
   const localProvider = preferredTranscriptionProvider() === 'local';
+  const parakeetSelected = (() => { try { return localStorage.getItem('cc.localAsrEngine') === 'parakeet'; } catch { return false; } })();
   const defaultId = useMemo(() => pickDefaultTrack(trackOptions, items), [trackOptions, items]);
   const [track, setTrack] = useState<TrackId | null>(defaultId);
   // Both views use ScriptView (speaker blocks + Gap rows). segment uses a lower
@@ -113,15 +116,27 @@ export function TranscriptPanel({
     if (reference) emitSelectionRef(reference);
   };
 
+  const setTranscriptionEngine = (next: string) => {
+    if (next === 'cloud') setPreferredTranscriptionProvider('assemblyai');
+    else {
+      setPreferredTranscriptionProvider('local');
+      try { localStorage.setItem('cc.localAsrEngine', next); } catch { /* best effort */ }
+    }
+    setProviderRevision((revision) => revision + 1);
+  };
+
   const transcribeTrack = async () => {
     if (!clips.length) return;
     const jobs = clips.map((c) => ({ path: c.src!, itemId: c.id, label: clipLabel(c) }));
+    const captionSources: string[] = [];
     reset();
     try {
       await runMany(jobs, (itemId, r) => {
         onSetItemTranscript(itemId, r.words);
+        captionSources.push(itemId);
         setFocusItemId(itemId);
       });
+      if (captionSources.length) onOpenCaptionStyles?.(captionSources);
     } catch { /* hook holds error */ }
   };
 
@@ -156,6 +171,29 @@ export function TranscriptPanel({
           <option value="paragraph">{t('段落视图')}</option>
           <option value="segment">{t('片段视图')}</option>
         </select>
+        <select
+          value={localProvider ? (parakeetSelected ? 'parakeet' : 'whisper') : 'cloud'}
+          onChange={(event) => setTranscriptionEngine(event.target.value)}
+          disabled={busy}
+          className="cc-tx-select"
+          aria-label="Transcription model"
+          title="Transcription model for the next run"
+        >
+          <option value="cloud">AssemblyAI</option>
+          <option value="whisper">Local Whisper</option>
+          <option value="parakeet">Parakeet TDT v3 (MLX, English)</option>
+        </select>
+        {trackHasWords && (
+          <button
+            type="button"
+            className="cc-tx-btn"
+            disabled={busy || !clips.length}
+            onClick={() => void transcribeTrack()}
+            title="Replace this track's transcript using the selected model"
+          >
+            {busy ? 'Transcribing…' : 'Re-transcribe'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setEditMode((v) => !v)}

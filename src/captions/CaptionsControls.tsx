@@ -34,6 +34,7 @@ interface CaptionsControlsProps {
 const PACINGS: { v: CaptionPacing; label: string; hint: string }[] = [
   { v: 'phrase', label: '按句/短语', hint: '一次显示一句话，适合纪录片口播' },
   { v: 'word', label: '逐词高亮', hint: '当前说到的词会变色，像卡拉 OK' },
+  { v: 'short', label: '3-4 words at a time', hint: 'Short caption groups follow the spoken timing' },
 ];
 
 /** Translation target = second line language. When the spoken broadcast is in Chinese, it will be translated into English by default. Do not select "Chinese" again. */

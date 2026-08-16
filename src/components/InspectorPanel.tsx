@@ -1,11 +1,13 @@
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { PlayerRef } from '@remotion/player';
-import { useT } from '../i18n/locale';
+import { tData, useT } from '../i18n/locale';
+import { usePersistedState } from '../hooks/usePersistedState';
 import { Icon } from './icons';
 import { HistoryGestureProvider } from './inspector/InspectorKeyframeControls';
 import { InspectorContent, type InspectorTab } from './inspector/InspectorContent';
 import type { InspectorPanelProps } from './inspector/InspectorTypes';
 import { CaptionInspectorControls } from './inspector/CaptionInspectorControls';
+import { clampInspectorWidth, DEFAULT_INSPECTOR_WIDTH, MIN_INSPECTOR_WIDTH, MIN_PREVIEW_WIDTH } from './inspector/inspectorWidth';
 
 function useInspectorPlayhead(getPlayhead: () => number, playerRef: RefObject<PlayerRef | null>): number {
   const [playhead, setPlayhead] = useState(getPlayhead);
@@ -53,7 +55,7 @@ function InspectorHeader({ panel }: { panel: InspectorPanelProps }) {
       <span className="cc-insp-heading">
         <span className="cc-insp-title">{caption ? t('字幕属性') : t('片段属性')}</span>
         {caption ? <span className="cc-insp-title-name" title={caption.target.cue.text}>{caption.target.cue.text}</span>
-          : item && <span className="cc-insp-title-name" title={item.name}>{count > 1 ? t('{n} 个片段', { n: count }) : item.name}</span>}
+          : item && <span className="cc-insp-title-name" title={tData(item.name)}>{count > 1 ? t('{n} 个片段', { n: count }) : tData(item.name)}</span>}
       </span>
       {item?.denoisedSrc && <span className="cc-insp-pill">{t('人声隔离')}</span>}
     </button>
@@ -62,6 +64,27 @@ function InspectorHeader({ panel }: { panel: InspectorPanelProps }) {
 
 export function InspectorPanel(panel: InspectorPanelProps) {
   const t = useT();
+  const resizeHandleRef = useRef<HTMLDivElement>(null);
+  const resizeStart = useRef<{ pointerId: number; startX: number; width: number } | null>(null);
+  const [width, setWidth] = usePersistedState('openchatcut.inspectorWidth.ui-v1', DEFAULT_INSPECTOR_WIDTH);
+  const workspaceWidth = () => resizeHandleRef.current?.parentElement?.parentElement?.clientWidth ?? Number.MAX_SAFE_INTEGER;
+  const resizeBy = (delta: number) => setWidth((current) => clampInspectorWidth(current + delta, workspaceWidth()));
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeStart.current = { pointerId: event.pointerId, startX: event.clientX, width };
+  };
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = resizeStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    setWidth(clampInspectorWidth(start.width + start.startX - event.clientX, workspaceWidth()));
+  };
+  const stopResizing = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (resizeStart.current?.pointerId !== event.pointerId) return;
+    resizeStart.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   const [activeTab, setActiveTab] = useState<InspectorTab>('basic');
   const playhead = useInspectorPlayhead(panel.getPlayhead, panel.playerRef);
   const item = panel.selectedItem;
@@ -74,8 +97,10 @@ export function InspectorPanel(panel: InspectorPanelProps) {
   return (
     <HistoryGestureProvider value={panel.historyGesture}>
       <section
+        id="cc-inspector"
         className={`cc-inspector${panel.collapsed ? ' collapsed' : ''}`}
         data-cc-shortcut-surface="inspector"
+        style={{ '--cc-inspector-width': `${width}px` } as React.CSSProperties}
         tabIndex={-1}
         onPointerDownCapture={(event) => {
           if (!(event.target as HTMLElement).closest('button, input, select, textarea, [contenteditable="true"]')) {
@@ -83,6 +108,26 @@ export function InspectorPanel(panel: InspectorPanelProps) {
           }
         }}
       >
+        <div
+          ref={resizeHandleRef}
+          className="cc-insp-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-controls="cc-inspector"
+          aria-label={t('Resize properties panel')}
+          aria-valuemin={MIN_INSPECTOR_WIDTH}
+          aria-valuemax={Math.max(MIN_INSPECTOR_WIDTH, workspaceWidth() - MIN_PREVIEW_WIDTH)}
+          aria-valuenow={width}
+          tabIndex={0}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={stopResizing}
+          onPointerCancel={stopResizing}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') { event.preventDefault(); resizeBy(16); }
+            if (event.key === 'ArrowRight') { event.preventDefault(); resizeBy(-16); }
+          }}
+        />
         <InspectorHeader panel={panel} />
         {!panel.collapsed && (panel.selectedCaption && panel.onCaptionUpdate
           ? <CaptionInspectorControls selection={panel.selectedCaption} onUpdate={panel.onCaptionUpdate} />

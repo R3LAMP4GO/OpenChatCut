@@ -13,11 +13,8 @@ export type Locale = 'zh' | 'en';
 const STORAGE_KEY = 'cc.locale';
 
 function readInitial(): Locale {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === 'en' ? 'en' : 'zh';
-  } catch {
-    return 'zh';
-  }
+  // The product is English-only. Ignore a legacy saved Chinese preference.
+  return 'en';
 }
 
 let current: Locale = readInitial();
@@ -27,13 +24,13 @@ export function getLocale(): Locale {
   return current;
 }
 
-export function setLocale(next: Locale): void {
-  if (next === current) return;
-  current = next;
+export function setLocale(_next: Locale): void {
+  if (current === 'en') return;
+  current = 'en';
   try {
-    localStorage.setItem(STORAGE_KEY, next);
+    localStorage.setItem(STORAGE_KEY, 'en');
   } catch { /* If the private mode cannot be saved, it will only affect this session */ }
-  document.documentElement.lang = next === 'en' ? 'en' : 'zh-CN';
+  document.documentElement.lang = 'en';
   subscribers.forEach((notify) => notify());
 }
 

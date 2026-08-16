@@ -1,7 +1,7 @@
 import type { CaptionsData, CaptionSourceEntry, CaptionWordOverride } from './types';
 import type { TimelineItem } from '../editor/types';
 import type { TranscriptWord } from '../transcript/types';
-import { itemEditOpts, itemWindow, keptWordIndices, mediaWindowKeptIndices, mediaWindowWords, retimeWords } from '../transcript/edit';
+import { itemEditOpts, itemWindow, keptWordIndices, mediaWindowKeptIndices, mediaWindowWords, retimeWords, usesEditedWordFlow } from '../transcript/edit';
 import { hasOperationalTranscript } from '../transcript/types';
 import { isStableIdentity } from '../transcript/identity';
 import { findVariantByLang, resolveVariantText } from '../transcript/variants';
@@ -13,12 +13,28 @@ import { orderedCaptionSourceEntries } from './sourceOrder';
 // Deleted words are not hidden, and timing is never rearranged (TimelineComposition is constant for video OffthreadVideo
 // trimBefore, word editing does not change the picture; the caption layer needs to hide words (wordOverrides).
 function projectItemWords(item: TimelineItem, src: TranscriptWord[], del: Set<number>, fps: number): TranscriptWord[] {
-  if (item.kind !== 'audio') return mediaWindowWords(src, fps, item);
-  return retimeWords(src, del, fps, item.startFrame, { ...itemEditOpts(item), window: itemWindow(item) });
+  const words = normalizeLegacyParakeetSeconds(item, src, fps);
+  if (item.kind !== 'audio' || !usesEditedWordFlow(item)) return mediaWindowWords(words, fps, item);
+  return retimeWords(words, del, fps, item.startFrame, { ...itemEditOpts(item), window: itemWindow(item) });
+}
+
+
+/** Parakeet previously persisted second timestamps where every other transcript uses milliseconds. */
+function normalizeLegacyParakeetSeconds(item: TimelineItem, words: TranscriptWord[], fps: number): TranscriptWord[] {
+  const durationMs = (item.durationInFrames / fps) * 1000;
+  const maxEnd = Math.max(0, ...words.map((word) => word.end));
+  const secondSizedWords = words.filter((word) => word.end > word.start && word.end - word.start <= 10).length;
+  if (words.length < 2 || !durationMs || maxEnd > durationMs / 10 || secondSizedWords * 2 < words.length) return words;
+  return words.map((word, index) => {
+    const start = word.start * 1000;
+    const nextStart = words[index + 1]?.start;
+    const end = nextStart != null && word.end > nextStart ? nextStart * 1000 : word.end * 1000;
+    return { ...word, start, end: Math.max(start, end) };
+  });
 }
 
 function projectItemIndices(item: TimelineItem, del: Set<number>, fps: number): number[] {
-  if (item.kind !== 'audio') return mediaWindowKeptIndices(item.transcript ?? [], fps, item);
+  if (item.kind !== 'audio' || !usesEditedWordFlow(item)) return mediaWindowKeptIndices(item.transcript ?? [], fps, item);
   return keptWordIndices(item.transcript ?? [], del, fps, { ...itemEditOpts(item), window: itemWindow(item) });
 }
 

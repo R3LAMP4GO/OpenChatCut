@@ -13,6 +13,7 @@ import { downsampleMono } from './client-asr-extract';
 import { ASR_INFERENCE_CONTRACT } from '../../shared/asr-inference-contract';
 import { tryDesktopNativeAsr, warmUpDesktopNativeAsr } from './desktop-native-asr';
 import { desktopNativeInferenceEnabled } from './desktop-inference-preference';
+import { parakeetSelected, transcribeWithParakeet } from './parakeet-local';
 
 const TARGET_SR = ASR_INFERENCE_CONTRACT.sampleRate;
 /** WebGPU load can hang on software renderers (headless/SwiftShader); force-fail
@@ -270,10 +271,16 @@ export async function localTranscribePathResumable(
   await onCheckpoint(checkpoint);
   onWait?.();
 
+  let source: string | undefined;
+  if (parakeetSelected()) {
+    source = await transcriptionSourceForPath(path, opts);
+    const result = await transcribeWithParakeet(source, opts.languageCode ?? 'en');
+    await onCheckpoint({ ...checkpoint, providerStatus: 'completed' });
+    return toTranscriptResult(result);
+  }
   const profile = await detectDeviceProfile();
   const config = chooseAsrConfig(profile);
   await assertAsrModelDownloaded(config);
-  let source: string | undefined;
   if (desktopNativeInferenceEnabled()) {
     source = await transcriptionSourceForPath(path, opts);
     const native = await tryDesktopNativeAsr({

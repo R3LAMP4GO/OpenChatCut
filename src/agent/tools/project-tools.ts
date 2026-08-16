@@ -119,7 +119,7 @@ async function execList(args: Args): Promise<unknown> {
 async function execCreate(args: Args): Promise<unknown> {
   const name = typeof args.name === 'string' && args.name.trim()
     ? args.name.trim()
-    : '新工程';
+    : 'Untitled Project';
   const description = typeof args.description === 'string' ? args.description : undefined;
   const doc = emptyProjectDoc({
     width: typeof args.compositionWidth === 'number' ? args.compositionWidth : undefined,

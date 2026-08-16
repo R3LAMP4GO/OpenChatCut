@@ -7,11 +7,10 @@ import { TEMPLATES } from '../../editor/initial.ts';
 import type { RefItem } from './ChatComposer.tsx';
 
 for (const template of TEMPLATES) {
-  const alreadyChinese = /[\u3400-\u9fff]/.test(template.name);
   assert.equal(
-    alreadyChinese || tData(template.name) !== template.name,
-    true,
-    `built-in MG template is missing a Chinese display name: ${template.name}`,
+    /[\u3400-\u9fff]/.test(tData(template.name)),
+    false,
+    `built-in template has Chinese text in the English UI: ${template.name}`,
   );
 }
 

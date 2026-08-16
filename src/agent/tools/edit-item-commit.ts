@@ -203,7 +203,7 @@ function commitSolidPlan(ctx: AgentContext, plan: OpResult, ripple: boolean): Op
     kind: 'solid',
     placed: {
       itemId,
-      name: plan.name ?? '纯色',
+      name: plan.name ?? 'Solid color',
       color: plan.color ?? '#1a1a1a',
       track: plan.track,
       startFrame: plan.startFrame ?? 'appended',

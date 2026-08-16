@@ -30,6 +30,7 @@ import { customTransitionUniforms, getCustomTransition } from '../gl/customTrans
 import type { ZoomEffect } from '../editor/types';
 import { Icon } from '../components/icons';
 import { parseSrt } from '../captions/srt';
+import { createTranscriptCaptions } from '../captions/transcriptCaptions';
 
 // Two built-in LUTs implemented with published camera-log transfer functions.
 // They apply through the same pipeline as other effects.
@@ -169,10 +170,7 @@ export function LibraryPanel({ semanticScopeId, templates, onAddTemplate, onAddA
   const isSequences = mainTab === '序列';
   const isSkills = mainTab === '技能';
   const openCaptionStyles = (sourceItemIds: string[]) => {
-    const target = captionTracks[0];
-    if (!target?.captions && sourceItemIds.length) {
-      onSetCaptions({ enabled: true, template: 'black-bar', pacing: 'phrase', sourceItemId: sourceItemIds[0]!, sources: sourceItemIds.length > 1 ? sourceItemIds : undefined, sourceMode: sourceItemIds.length > 1 ? 'item' : undefined, bilingual: false }, target?.id);
-    }
+    createTranscriptCaptions(sourceItemIds, captionTracks[0], onSetCaptions);
     setMainTab('字幕');
   };
   const importSrt = async (file: File) => {

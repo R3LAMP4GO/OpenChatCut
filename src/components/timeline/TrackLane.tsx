@@ -18,7 +18,7 @@ import type { EditorCommands } from '../../editor/store';
 import { hasLibraryDrag, parseLibraryDrag, type LibraryDragPayload } from '../../library/drag';
 import { ALL_FX, FX_EFFECTS, LUT_EFFECTS } from '../../gl/fx/effects';
 import { ZOOM_SHAPE_LABELS } from '../../editor/types';
-import { useT } from '../../i18n/locale';
+import { tData, useT } from '../../i18n/locale';
 import { hasOperationalTranscript } from '../../transcript/types';
 import {
   CLIP_COLOR, fmt, intersectFrameRange, visibleTimelineItems, waveformPath,
@@ -282,9 +282,10 @@ export function TrackLane({
         const isLibOver = libDropTarget === it.id;
         const itemIndex = itemIndexById.get(it.id) ?? 0;
         const overlapSpans = topClipOverlapSpans(start, dur, items.slice(0, itemIndex));
-        let clipTitle = it.name;
+        const itemName = tData(it.name);
+        let clipTitle = itemName;
         if (editMode === 'slip' && !canSlip) clipTitle = t('此类型没有可滑移的源区间');
-        else if (audioMuted) clipTitle = `${it.name} · ${t('轨道已静音')}`;
+        else if (audioMuted) clipTitle = `${itemName} · ${t('轨道已静音')}`;
         return (
           <div
             key={it.id}
@@ -455,7 +456,7 @@ export function TrackLane({
             {/* trim handles (hidden in blade / pen / selection-pick modes) */}
             {showHandles && <div onPointerDown={(e) => startDrag(e, it.id, 'trim-left', it.startFrame, it.durationInFrames, it.track, it.srcInFrame ?? 0)}
               style={{ position: 'absolute', left: 0, top: 0, width: 8, height: '100%', cursor: 'ew-resize', background: editMode === 'trim' || editMode === 'rate-stretch' ? themeAlpha.accent(0.5) : selected ? themeAlpha.shadow(0.25) : 'transparent' }} />}
-            <span className={`cc-clip-label${it.kind === 'audio' ? ' audio' : ''}`}>{it.name}</span>
+            <span className={`cc-clip-label${it.kind === 'audio' ? ' audio' : ''}`}>{itemName}</span>
             {showHandles && <div onPointerDown={(e) => startDrag(e, it.id, 'trim-right', it.startFrame, it.durationInFrames, it.track, it.srcInFrame ?? 0)}
               style={{ position: 'absolute', right: 0, top: 0, width: 8, height: '100%', cursor: 'ew-resize', background: editMode === 'trim' || editMode === 'rate-stretch' ? themeAlpha.accent(0.5) : selected ? themeAlpha.shadow(0.25) : 'transparent' }} />}
           </div>

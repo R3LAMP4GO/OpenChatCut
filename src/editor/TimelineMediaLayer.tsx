@@ -9,7 +9,7 @@ import { AbsoluteFill, Audio as ServerAudio, Img, Sequence, useCurrentFrame } fr
 import { ClipFx } from '../gl/ClipFx';
 import { firstGlEffect } from '../gl/clipEffects';
 import { selectEffectPreviewAdapter, type SelectedPreviewStatusListener } from '../gl/previewAdapter';
-import { itemEditOpts, itemWindow, keptSegments } from '../transcript/edit';
+import { itemEditOpts, itemWindow, keptSegments, usesEditedWordFlow } from '../transcript/edit';
 import { hasOperationalTranscript } from '../transcript/types';
 import { voiceIsolationMix } from '../audio/voiceMix';
 import { backgroundFillAppearanceFor, backgroundFillFilter } from './backgroundFill';
@@ -118,7 +118,7 @@ export function AudioClip({ item, fps, muted, gainAt, transitions, premountFor, 
 }) {
   const volumeAt = (localFrame: number) => (muted ? 0 : volumeAtFrame(item, localFrame));
   if (!item.src) return null;
-  if (hasOperationalTranscript(item)) {
+  if (hasOperationalTranscript(item) && usesEditedWordFlow(item)) {
     const deleted = new Set(item.deletedWordIdx ?? []);
     return <>{keptSegments(item.transcript, deleted, fps, item.startFrame, {
       ...itemEditOpts(item),

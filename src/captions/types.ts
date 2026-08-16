@@ -29,7 +29,7 @@ export interface CaptionLayout {
 // onto the edited timeline (see retimeWords) — captions follow edits. If no item
 // is referenced, `words` + `offsetFrames` provide a standalone (sample) source.
 export type CaptionTemplate = 'plain' | 'black-bar' | 'persona' | 'off-the-wall' | 'the-french-dispatch' | 'dogme' | 'boyz-n-the-hood' | 'bubble-pop' | 'submagic' | 'story' | 'bili' | 'luxe' | 'noir' | 'atelier' | 'product' | 'signal' | 'studio' | 'white-card' | 'bold-outline' | 'deyi-card' | 'tiktok' | 'netflix';
-export type CaptionPacing = 'word' | 'phrase';
+export type CaptionPacing = 'word' | 'short' | 'phrase';
 
 /** Deterministic burn-in animation shared by Player preview and Remotion export. */
 export type CaptionMotionPreset = 'none' | 'fade-up' | 'pop' | 'word-pop' | 'karaoke-pulse';
@@ -191,7 +191,7 @@ export function paginate(
   const chars = Number.isFinite(maxCharsPerLine) && maxCharsPerLine > 0
     ? maxCharsPerLine
     : CAPTION_MAX_CHARS_PER_LINE;
-  return paginateContentAware(words, maxPhraseWords, breakBefore, chars * lines);
+  return paginateContentAware(words, pacing === 'short' ? 4 : maxPhraseWords, breakBefore, chars * lines);
 }
 
 // Forced page breaks split the input into hard chunks before content-aware

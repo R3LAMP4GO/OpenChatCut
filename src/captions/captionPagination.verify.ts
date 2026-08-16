@@ -51,6 +51,10 @@ assert.deepEqual(forced.map((page) => page.words.map((word) => word.text)), [
   ['three', 'four'],
 ], 'forced page breaks remain hard boundaries');
 
+const shortGroups = paginate(words(['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']), 'short', 10);
+assert.ok(shortGroups.every((page) => page.words.length <= 4), 'short pacing limits each caption to four words');
+assert.deepEqual(shortGroups.flatMap((page) => page.words.map((word) => word.text)), ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'], 'short pacing preserves every spoken word');
+
 const segmenter = Intl.Segmenter;
 if (typeof segmenter === 'function') {
   assert.deepEqual(

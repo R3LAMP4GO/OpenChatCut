@@ -75,6 +75,21 @@ export function itemEditOpts(it: {
   };
 }
 
+/** Whether audio playback must be rebuilt from transcript word segments. */
+export function usesEditedWordFlow(item: {
+  deletedWordIdx?: number[];
+  silenceFrames?: number;
+  gapCapsMs?: Record<string, number>;
+  transcriptPlayOrder?: number[];
+  cutPadFrames?: number;
+}): boolean {
+  return !!item.deletedWordIdx?.length
+    || item.silenceFrames !== undefined
+    || !!Object.keys(item.gapCapsMs ?? {}).length
+    || !!item.transcriptPlayOrder?.length
+    || !!item.cutPadFrames;
+}
+
 /** Max frames allowed for the gap immediately before `nextWordIdx` (null = uncapped). */
 export function gapCapFrames(opts: EditOpts, nextWordIdx: number, fps: number): number | null {
   const key = String(nextWordIdx);

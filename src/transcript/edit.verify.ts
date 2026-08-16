@@ -1,7 +1,7 @@
 // 词编辑引擎 window(trim 窗口)检查:npx tsx src/transcript/edit.check.ts
 // fps=10,词按秒排布,帧数=秒×10,肉眼可核。
 import assert from 'node:assert';
-import { editedFrames, itemWindow, keptSegments, keptWordIndices, mediaWindowKeptIndices, mediaWindowWords, retimeWords } from './edit';
+import { editedFrames, itemWindow, keptSegments, keptWordIndices, mediaWindowKeptIndices, mediaWindowWords, retimeWords, usesEditedWordFlow } from './edit';
 import type { TranscriptWord } from './types';
 
 const FPS = 10;
@@ -12,6 +12,8 @@ const W: TranscriptWord[] = [
   { text: 'd', start: 4000, end: 5000 },  // f40-50
 ];
 const none = new Set<number>();
+assert.equal(usesEditedWordFlow({}), false, 'an untouched transcript plays its original audio timeline');
+assert.equal(usesEditedWordFlow({ deletedWordIdx: [1] }), true, 'a word edit rebuilds audio from kept word segments');
 
 // ── 回归红线:无窗口行为不变 ──────────────────────────────────────────────
 {

@@ -28,6 +28,7 @@ function mapPacing(v: unknown): CaptionPacing | undefined {
   const p = str(v);
   if (!p) return undefined;
   if (p === 'word') return 'word';
+  if (p === 'short' || p === 'short-phrase') return 'short';
   if (p === 'phrase' || p === 'auto' || p === 'sentence') return 'phrase';
   return undefined;
 }
