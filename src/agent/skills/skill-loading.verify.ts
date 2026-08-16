@@ -44,7 +44,8 @@ try {
     normalizeStoredCustomSkill: (value: unknown) => CustomSkill | undefined;
   };
 
-  assert.equal(pluginFiles.PLUGIN_SKILLS.length, 26);
+  assert.equal(pluginFiles.PLUGIN_SKILLS.length, 27);
+  assert(pluginFiles.PLUGIN_SKILLS.some((skill) => skill.slug === 'j-cut-editor'), 'J-cut skill is bundled');
   assert.deepEqual(catalog.CREATIVE_SKILLS.map((skill) => skill.slug), expectedCreativeSlugs);
   for (const skill of pluginFiles.PLUGIN_SKILLS) {
     for (const match of skill.body.matchAll(/\]\((?:\.\/)?([^)\s#?]+\.md)(?:[?#][^)]*)?\)/g)) {
