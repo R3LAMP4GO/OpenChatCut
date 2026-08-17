@@ -160,6 +160,21 @@ assert.ok(!GENERIC_ADD_KINDS.has('text') && !GENERIC_ADD_KINDS.has('solid'), 'te
 // no track hint: video defaults to V1, audio to A1
 assert.equal(validateGenericAdd(state, pool, { type: 'video', assetId: 'vid_broll01' }).track, 'V1', 'video default track V1');
 assert.equal(validateGenericAdd(state, pool, { type: 'audio', assetId: 'aud_music01' }).track, 'A1', 'audio default track A1');
+// A video pool asset can be placed as raw audio for J/L cuts, even when its transcript exists.
+{
+  const transcribedVideo = {
+    ...pool[1]!,
+    transcript: [{ text: 'dialogue', start: 500, end: 1_000 }],
+    transcriptGenerationId: 'generation-1',
+  } as MediaAsset;
+  const p = validateGenericAdd(state, [transcribedVideo], {
+    type: 'audio', assetId: transcribedVideo.id, track: 'A1', fromFrame: 82,
+    sourceStartSeconds: 0.5, sourceEndSeconds: 2,
+  });
+  assert.equal(p.error, undefined, 'video-to-audio J-cut add validates');
+  assert.equal(p.audioOnly, true); assert.equal(p.track, 'A1');
+  assert.equal(p.srcInFrame, 15); assert.equal(p.durationInFrames, 45);
+}
 // startFrame omitted → not in plan (appends)
 assert.equal('startFrame' in validateGenericAdd(state, pool, { type: 'video', assetId: 'vid_broll01' }), false, 'no startFrame → append');
 

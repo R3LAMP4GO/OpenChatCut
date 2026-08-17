@@ -14,6 +14,7 @@ import { effectiveOutputTokenBudget } from './context-compaction';
 import type { AgentSendOptions } from './useAgentRun';
 import { createAgentRetry, type DisplayMessage } from './agent-session';
 import { ServerRunToolExecutor } from './serverRunToolExecutor';
+import { executeDeterministicCommand, isDeterministicCommandCandidate } from './deterministic-command';
 import {
   buildServerRunPayload,
   loadServerRunMetadata,
@@ -489,6 +490,21 @@ export async function sendServerRun(
   text: string,
   sendOptions: AgentSendOptions = {},
 ): Promise<void> {
+  if (isDeterministicCommandCandidate(text)) {
+    environment.refs.running.current = true;
+    environment.setRunning(true);
+    try {
+      const direct = await executeDeterministicCommand(text, sendOptions, environment.refs.context.current);
+      if (direct.handled) {
+        environment.appendMessage({ role: 'user', text, retry: createAgentRetry(text, sendOptions) });
+        environment.appendMessage({ role: direct.ok ? 'assistant' : 'error', text: direct.summary });
+        return;
+      }
+    } finally {
+      environment.refs.running.current = false;
+      environment.setRunning(false);
+    }
+  }
   const prepared = await prepareServerRunPayload(environment, text, sendOptions);
   if (!prepared) return;
   if (!await acquireServerRunOwnership(environment.projectId, prepared.payload.runId)) {

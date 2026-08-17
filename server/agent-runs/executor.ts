@@ -414,11 +414,19 @@ function createExecutionPlan(run: ServerRun, input: ServerRunInput) {
   };
 }
 
+/** Keep parity with the browser and Codex runtimes: one run may use at most 30 tool turns. */
+export const MAX_SERVER_RUN_TURNS = 30;
 /** What the loop does after one turn, extracted for deterministic checks. */
-export type TurnDisposition = 'continue' | 'completed' | 'max-tokens';
-export function turnDisposition(hitMaxTokens: boolean, continued: boolean): TurnDisposition {
+export type TurnDisposition = 'continue' | 'completed' | 'max-tokens' | 'max-turns';
+export function turnDisposition(
+  hitMaxTokens: boolean,
+  continued: boolean,
+  completedTurns = 1,
+  maxTurns = MAX_SERVER_RUN_TURNS,
+): TurnDisposition {
   if (hitMaxTokens) return 'max-tokens';
-  return continued ? 'continue' : 'completed';
+  if (!continued) return 'completed';
+  return completedTurns >= maxTurns ? 'max-turns' : 'continue';
 }
 
 async function executeRunTurns(
@@ -428,10 +436,9 @@ async function executeRunTurns(
 ): Promise<void> {
   const plan = createExecutionPlan(run, input);
   let messages = plan.prompt.messages;
-  // No turn cap: the model decides when the task is done. The only automatic
-  // stop beside "no more tool calls" is an output-token cutoff, which would
-  // otherwise feed truncated text back into the loop.
-  for (let turn = 0; ; turn += 1) {
+  // Finite tool loop: no provider/model output can trigger more than the shared
+  // 30-turn ceiling. Transient provider retries are separately capped at three.
+  for (let turn = 0; turn < MAX_SERVER_RUN_TURNS; turn += 1) {
     const outcome = await runServerTurnWithRetry(run, turn + 1, signal, () =>
       plan.backend === 'codex'
         ? (async () => (await import('./codex-turn')).executeServerCodexTurn({
@@ -475,15 +482,16 @@ async function executeRunTurns(
       return;
     }
     messages = outcome.messages;
-    const disposition = turnDisposition(outcome.hitMaxTokens, outcome.continued);
+    const completedTurns = turn + 1;
+    const disposition = turnDisposition(outcome.hitMaxTokens, outcome.continued, completedTurns);
     if (disposition === 'continue') continue;
-    if (disposition === 'max-tokens') {
-      pushRunEvent(run, 'max-tokens', { turn: turn + 1 });
-    }
+    if (disposition === 'max-tokens') pushRunEvent(run, 'max-tokens', { turn: completedTurns });
+    if (disposition === 'max-turns') pushRunEvent(run, 'max-turns', { turns: completedTurns });
     pushRunEvent(run, 'finish', serverRunTextMetadata(outcome.text));
     await setRunStatus(run, 'completed');
     return;
   }
+  throw new Error('agent turn loop exhausted without a terminal disposition');
 }
 
 async function settleRunFailure(

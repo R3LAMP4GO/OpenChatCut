@@ -2,6 +2,7 @@
 export default {
   '切换界面语言': 'Switch UI language',
   '返回工程列表': 'Back to projects',
+  '示例工程': 'Sample Project',
   '双击重命名': 'Double-click to rename',
   '编辑快捷键': 'Edit keyboard shortcuts',
   '撤销': 'Undo',

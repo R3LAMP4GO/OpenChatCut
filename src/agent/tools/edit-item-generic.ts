@@ -380,7 +380,8 @@ export function validateGenericAdd(
     return { error: `ambiguous asset prefix "${q}"`, candidates: hits.slice(0, 6).map((asset) => ({ id: asset.id, name: asset.name, kind: asset.kind })) };
   }
   const asset = hits[0]!;
-  if (asset.kind !== type) {
+  const audioOnly = type === 'audio' && asset.kind === 'video';
+  if (asset.kind !== type && !audioOnly) {
     return { error: `asset ${asset.id} is kind=${asset.kind}, not ${type} — pass type:"${asset.kind}"` };
   }
   const family = type === 'audio' ? 'audio' : 'video';
@@ -389,7 +390,11 @@ export function validateGenericAdd(
   if (!track) return { error: `no ${family} track for placement — create one with edit_track first` };
   const startFrame = finiteNum(entry.startFrame) ?? finiteNum(entry.fromFrame);
   const durationInFrames = finiteNum(entry.durationInFrames);
-  const sourceWindow = validateSourceWindow(type, asset, state.fps || 30, entry, durationInFrames);
+  // An audio-only copy of a video must use its raw source audio, not transcript reconstruction.
+  const sourceAsset = audioOnly
+    ? { ...asset, transcript: undefined, transcriptGenerationId: undefined, transcriptStale: undefined }
+    : asset;
+  const sourceWindow = validateSourceWindow(type, sourceAsset, state.fps || 30, entry, durationInFrames);
   if (sourceWindow?.error) return sourceWindow;
   if (sourceWindow) {
     return {
@@ -398,6 +403,7 @@ export function validateGenericAdd(
       plan: 'addMedia',
       assetId: asset.id,
       track,
+      ...(audioOnly ? { audioOnly: true } : {}),
       ...sourceWindow,
       ...(startFrame !== undefined ? { startFrame: Math.max(0, Math.round(startFrame)) } : {}),
     };
@@ -408,6 +414,7 @@ export function validateGenericAdd(
     plan: 'addMedia',
     assetId: asset.id,
     track,
+    ...(audioOnly ? { audioOnly: true } : {}),
     ...(startFrame !== undefined ? { startFrame: Math.max(0, Math.round(startFrame)) } : {}),
     ...(durationInFrames !== undefined && durationInFrames > 0 ? { durationInFrames: Math.round(durationInFrames) } : {}),
   };

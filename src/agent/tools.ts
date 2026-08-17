@@ -7,12 +7,14 @@ import { SCENE_QUALITY_TOOL_NAMES, SCENE_QUALITY_TOOL_SCHEMAS } from './tools/sc
 import { TRANSCRIPT_TOOL_NAMES, TRANSCRIPT_TOOL_SCHEMAS } from './tools/schemas/transcript-tools';
 import { TIMELINE_TOOL_NAMES, TIMELINE_TOOL_SCHEMAS } from './tools/schemas/timeline-tools';
 import { SCRIPT_TOOL_NAMES, SCRIPT_TOOL_SCHEMAS } from './tools/schemas/script-tools';
+import { SEGMENT_PLAN_TOOL_NAMES, SEGMENT_PLAN_TOOL_SCHEMAS } from './tools/schemas/segment-plan-tools';
 import { FRAMES_TOOL_NAMES, FRAMES_TOOL_SCHEMAS } from './tools/schemas/frames-tool';
 import { SCENE_DETECTION_TOOL_NAMES, SCENE_DETECTION_TOOL_SCHEMAS } from './tools/schemas/scene-detection-tools';
 import { GENERATE_TOOL_NAMES, GENERATE_TOOL_SCHEMAS } from './tools/generate-schemas';
 import { EFFECT_TOOL_NAMES, EFFECT_TOOL_SCHEMAS } from './tools/schemas/effect-tools';
 import { LIBRARY_TOOL_NAMES, LIBRARY_TOOL_SCHEMAS } from './tools/schemas/library-tools';
 import { EDIT_ITEM_TOOL_NAMES, EDIT_ITEM_TOOL_SCHEMAS } from './tools/schemas/edit-item-tools';
+import { SPLIT_EDIT_TOOL_NAMES, SPLIT_EDIT_TOOL_SCHEMAS } from './tools/schemas/split-edit-tools';
 import { MEDIA_POOL_TOOL_NAMES, MEDIA_POOL_TOOL_SCHEMAS } from './tools/schemas/media-pool-tools';
 import { TRACK_TOOL_NAMES, TRACK_TOOL_SCHEMAS } from './tools/schemas/track-tools';
 import { DESIGN_TOOL_NAMES, DESIGN_TOOL_SCHEMAS } from './tools/schemas/design-tools';
@@ -22,6 +24,8 @@ import { CAPTION_AVOIDANCE_TOOL_NAMES, CAPTION_AVOIDANCE_TOOL_SCHEMAS } from './
 import { PLACE_GRAPHICS_TOOL_NAMES, PLACE_GRAPHICS_TOOL_SCHEMAS } from './tools/placement-tools';
 import { SHADER_TOOL_NAMES, SHADER_TOOL_SCHEMAS } from './tools/schemas/shader-tools';
 import { HIGHLIGHT_TOOL_NAMES, HIGHLIGHT_TOOL_SCHEMAS } from './tools/schemas/highlight-tool';
+import { SHORTFORM_CLIP_TOOL_NAMES, SHORTFORM_CLIP_TOOL_SCHEMAS } from './tools/schemas/shortform-clip-tools';
+import { CUT_STRATEGY_TOOL_NAMES, CUT_STRATEGY_TOOL_SCHEMAS } from './tools/schemas/cut-strategy-tools';
 import { REFRAME_TOOL_NAMES, REFRAME_TOOL_SCHEMAS } from './tools/schemas/reframe-tools';
 import { EXPORT_TOOL_NAMES, EXPORT_TOOL_SCHEMAS } from './tools/schemas/export-tools';
 import { EXPORT_QA_TOOL_NAMES, EXPORT_QA_TOOL_SCHEMAS } from './tools/schemas/export-qa-tools';
@@ -81,6 +85,8 @@ export const TOOL_SCHEMAS: AgentToolSchema[] = [
   ...MEDIA_POOL_TOOL_SCHEMAS,
   // Script system (read_script/apply_script with deterministic timeline.md round trips).
   ...SCRIPT_TOOL_SCHEMAS,
+  // Stable segment decisions: semantic selection by AI, deterministic one-batch application.
+  ...SEGMENT_PLAN_TOOL_SCHEMAS,
   // Multimodal self-check: view_timeline_frames lets the agent inspect rendered frames.
   ...FRAMES_TOOL_SCHEMAS,
   // Local FFmpeg scene detection: report cut points or atomically generate markers and batch cuts.
@@ -91,6 +97,8 @@ export const TOOL_SCHEMAS: AgentToolSchema[] = [
   // browse_library → edit_item provides unified discovery and application for fx/lut/zoom/transition/sound.
   ...LIBRARY_TOOL_SCHEMAS,
   ...EDIT_ITEM_TOOL_SCHEMAS,
+  // Deterministic J/L split-edit planning and atomic application.
+  ...SPLIT_EDIT_TOOL_SCHEMAS,
   // Compatibility shortcut: manage_effects maps to edit_item type=effect list/add/update/remove.
   ...EFFECT_TOOL_SCHEMAS,
   // Project design system: manage_design_style list/get/apply/update/clear.
@@ -107,6 +115,8 @@ export const TOOL_SCHEMAS: AgentToolSchema[] = [
   ...SHADER_TOOL_SCHEMAS,
   // Smart clips: find highlights from the word-level transcript → duplicate a 9:16 timeline → trim while preserving word frames.
   ...HIGHLIGHT_TOOL_SCHEMAS,
+  ...SHORTFORM_CLIP_TOOL_SCHEMAS,
+  ...CUT_STRATEGY_TOOL_SCHEMAS,
   // Auto reframe: sample frames → detect subject focus → setReframeKeyframe through the existing render path.
   ...REFRAME_TOOL_SCHEMAS,
   // Async render jobs: submit_render_job enqueues a long render and track_export polls progress/results.
@@ -218,7 +228,9 @@ const EXECUTOR_GROUPS: ReadonlyArray<readonly [ReadonlySet<string>, ToolExecutor
   [SCENE_DETECTION_TOOL_NAMES, async () => (await import('./tools/scene-detection-tools')).execSceneDetectionTool],
   [GENERATE_TOOL_NAMES, async () => (await import('./tools/generate-tools')).execGenerateTool],
   [LIBRARY_TOOL_NAMES, async () => (await import('./tools/library-tools')).execLibraryTool],
+  [SEGMENT_PLAN_TOOL_NAMES, async () => (await import('./tools/segment-plan-tools')).execSegmentPlanTool],
   [EDIT_ITEM_TOOL_NAMES, async () => (await import('./tools/edit-item-tools')).execEditItemTool],
+  [SPLIT_EDIT_TOOL_NAMES, async () => (await import('./tools/split-edit-tools')).execSplitEditTool],
   [EFFECT_TOOL_NAMES, async () => (await import('./tools/effect-tools')).execEffectTool],
   [DESIGN_TOOL_NAMES, async () => (await import('./tools/design-tools')).execDesignTool],
   [STOCK_TOOL_NAMES, async () => (await import('./tools/stock-tools')).execStockTool],
@@ -227,6 +239,8 @@ const EXECUTOR_GROUPS: ReadonlyArray<readonly [ReadonlySet<string>, ToolExecutor
   [PLACE_GRAPHICS_TOOL_NAMES, async () => (await import('./tools/placement-tools')).execPlaceGraphicsTool],
   [SHADER_TOOL_NAMES, async () => (await import('./tools/shader-tools')).execShaderTool],
   [HIGHLIGHT_TOOL_NAMES, async () => (await import('./tools/highlight-tool')).execHighlightTool],
+  [SHORTFORM_CLIP_TOOL_NAMES, async () => (await import('./tools/shortform-clip-tools')).execShortformClipTool],
+  [CUT_STRATEGY_TOOL_NAMES, async () => (await import('./tools/cut-strategy-tools')).execCutStrategyTool],
   [REFRAME_TOOL_NAMES, async () => (await import('./tools/reframe-tools')).execReframeTool],
   [EXPORT_TOOL_NAMES, async () => (await import('./tools/export-tools')).execExportTool],
   [EXPORT_QA_TOOL_NAMES, async () => (await import('./tools/export-qa-tools')).execExportQaTool],

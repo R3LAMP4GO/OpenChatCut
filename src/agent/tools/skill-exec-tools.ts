@@ -19,14 +19,15 @@ export async function execRunSkillScriptTool(name: string, args: Record<string, 
   if (name !== 'run_skill_script') return { error: `unknown tool ${name}` };
   const skill = String(args.skill ?? '').trim();
   const command = String(args.command ?? '').trim();
+  const entrypoint = String(args.entrypoint ?? '').trim();
   if (!skill) return { error: 'skill is required (slug from load_skill)' };
-  if (!command) return { error: 'command is required, e.g. "bash scripts/check-deps.sh"' };
+  if ((!entrypoint && !command) || (entrypoint && command)) return { error: 'provide entrypoint or legacy command, not both' };
   try {
     const res = await fetch(`/api/skills/${encodeURIComponent(skill)}/exec`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        command,
+        ...(entrypoint ? { entrypoint, values: args.values ?? {} } : { command, args: Array.isArray(args.args) ? args.args : [] }),
         timeout: typeof args.timeout === 'number' ? args.timeout : undefined,
       }),
     });

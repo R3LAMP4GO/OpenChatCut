@@ -366,7 +366,8 @@ button, input, select { font: inherit; }
 
 /* Editor asset panel. */
 .cc-library-panel { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; background:var(--cc-panel); border-right:0.5px solid var(--cc-border); container:library-panel / inline-size; font-family:Geist, system-ui,-apple-system,sans-serif; }
-.cc-main-tabs { display:flex; align-items:center; gap:12px; min-height:30px; padding:0 12px; overflow-x:auto; flex-shrink:0; scrollbar-width:none; }
+.cc-main-tabs { display:flex; align-items:center; gap:12px; min-height:30px; padding:0 12px; overflow-x:auto; flex-shrink:0; scrollbar-width:none; cursor:grab; touch-action:pan-y; }
+.cc-main-tabs[data-dragging="true"] { cursor:grabbing; user-select:none; }
 .cc-main-tab { height:30px; padding:0; border:0; border-bottom:1px solid transparent; background:transparent; color:var(--cc-text-dim); cursor:pointer; font-size:12px; font-weight:500; line-height:29px; white-space:nowrap; transition:border-color 120ms ease-out,color 120ms ease-out; }
 .cc-main-tab:hover,.cc-main-tab:focus-visible { color:var(--cc-text); }
 .cc-main-tab.selected { border-bottom-color:var(--cc-accent); color:var(--cc-text); }

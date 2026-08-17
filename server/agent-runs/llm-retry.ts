@@ -88,6 +88,12 @@ export function isRetryableLlmFailure(code: LlmFailureCode): boolean {
   return RETRYABLE_CODES.has(code);
 }
 
+export type LlmRetryDisposition = 'retry' | 'failed';
+export function llmRetryDisposition(code: LlmFailureCode, completedAttempts: number): LlmRetryDisposition {
+  if (!Number.isInteger(completedAttempts) || completedAttempts < 1) return 'failed';
+  return isRetryableLlmFailure(code) && completedAttempts < MAX_LLM_ATTEMPTS ? 'retry' : 'failed';
+}
+
 export function resolveRetryDelayMs(
   failure: LlmFailure,
   attempt: number,
@@ -141,9 +147,7 @@ export async function runServerTurnWithRetry<T>(
     } catch (error) {
       if (signal.aborted) throw error;
       const failure = classifyLlmFailure(error);
-      if (!isRetryableLlmFailure(failure.code) || call === MAX_LLM_ATTEMPTS - 1) {
-        throw error;
-      }
+      if (llmRetryDisposition(failure.code, call + 1) === 'failed') throw error;
       const delayMs = resolveRetryDelayMs(failure, call);
       pushRunEvent(run, 'llm-retry', {
         requestIndex,

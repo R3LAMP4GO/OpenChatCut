@@ -168,6 +168,8 @@ export default {
   '保存失败：{message}': 'Save failed: {message}',
   '技能': 'Skills',
   '选择创作工作流会约束 Agent 的规划与工具调用；激活后下一条消息按该工作流执行。': 'Choosing a creative workflow guides the Agent\'s planning and tool use; the next message runs under it.',
+  '自动剪辑策略': 'Automatic cut strategy',
+  '在常规剪辑、J-cut、L-cut 和匹配剪辑之间提供建议；默认关闭。': 'Suggests regular, J, L, or match cuts; off by default.',
   '当前：{name}': 'Active: {name}',
   '点击取消创作模式，回到自由创作': 'Click to exit creative mode and return to freeform',
   '提示：也可在聊天输入框用 /skill:名称 快速激活，或用「技能创作器」创建自己的技能。': 'Tip: type /skill:name in the chat box to activate quickly, or use Skill Creator to build your own.',

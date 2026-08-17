@@ -135,9 +135,20 @@ function commitMotionGraphicPlan(ctx: AgentContext, plan: OpResult, ripple: bool
 function commitMediaPlan(ctx: AgentContext, plan: OpResult): OpResult {
   const asset = (ctx.getDoc().assets ?? []).find((item) => item.id === plan.assetId);
   if (!asset) return { error: `pool asset vanished: ${String(plan.assetId)}` };
-  const placed = typeof plan.durationInFrames === 'number'
-    ? { ...asset, durationInFrames: Number(plan.durationInFrames) }
+  const sourceAsset = plan.audioOnly === true
+    ? {
+        ...asset,
+        kind: 'audio' as const,
+        width: undefined,
+        height: undefined,
+        transcript: undefined,
+        transcriptGenerationId: undefined,
+        transcriptStale: undefined,
+      }
     : asset;
+  const placed = typeof plan.durationInFrames === 'number'
+    ? { ...sourceAsset, durationInFrames: Number(plan.durationInFrames) }
+    : sourceAsset;
   const itemId = ctx.commands.addMediaItem(placed, {
     track: plan.track as string,
     startFrame: plan.startFrame as number | undefined,
@@ -150,7 +161,7 @@ function commitMediaPlan(ctx: AgentContext, plan: OpResult): OpResult {
       assetId: asset.id,
       itemId,
       name: asset.name,
-      kind: asset.kind,
+      kind: placed.kind,
       track: plan.track,
       startFrame: plan.startFrame ?? 'appended',
       durationInFrames: placed.durationInFrames,

@@ -282,6 +282,8 @@ export default {
   '在合适时机添加动效，强化表达且不遮挡内容。': 'Add motion graphics at the right moments — reinforcing the message without blocking content.',
   '逐镜拆解镜头语言，并生成分镜参考图。': 'Break down shot language shot by shot and generate storyboard reference images.',
   '基于视频内容和真实画面生成适合平台的封面图。': 'Generate platform-ready thumbnails from the video content and real frames.',
+  '把新闻素材粗剪为一条内容完整、逻辑清晰、节奏紧凑的新闻短视频，不加任何外部声音。': 'Turn news footage into a complete, clear, tightly paced news short without adding external audio.',
+  '把重复流程或想法做成可复用的自定义技能（SKILL.md），并安装到本机技能目录。': 'Turn repeatable workflows or ideas into reusable custom skills (SKILL.md) installed on this machine.',
   '请分析当前长视频，挑选最有传播力的高光片段，剪成节奏紧凑的竖屏短视频，并完成字幕、标题和发布前检查。': 'Analyze the current long video, select its strongest shareable moments, cut a tight vertical short, and finish captions, titles, and pre-publish QA.',
   '请梳理当前素材，选出最有表现力的镜头，按钩子、推进、高潮和收尾重组为一支竖屏 Reels，并完成配乐与节奏优化。': 'Review the current media, select the strongest shots, shape them into a vertical reel with hook, build, climax, and ending, then refine music and pacing.',
   '请根据当前主题规划一支电影感短片，先确定故事结构和视觉风格，再生成连贯镜头，完成声音、节奏和成片检查。': 'Plan a cinematic short from the current theme, define its story and visual style, generate coherent shots, and finish sound, pacing, and final QA.',

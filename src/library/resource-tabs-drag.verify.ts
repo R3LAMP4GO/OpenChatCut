@@ -60,4 +60,11 @@ assert.match(source, /\(event\.buttons & 1\) === 0/, 'a pointer released outside
 assert.match(source, /aria-selected=\{chip === c\}/);
 assert.match(source, /revealHorizontalTab\(/);
 
-console.log('resource-tabs-drag.verify: template category tabs drag and reveal intentionally');
+const libraryPanel = await readFile(new URL('./LibraryPanel.tsx', import.meta.url), 'utf8');
+assert.match(libraryPanel, /mainTabDragRef\.current = createHorizontalTabDrag\(event, event\.currentTarget\)/);
+assert.match(libraryPanel, /suppressMainTabClickRef\.current = didDrag/,
+  'dragging the main tab row must suppress the trailing click that highlights another tab');
+assert.match(libraryPanel, /onClickCapture=\{\(event\) => \{/);
+assert.match(libraryPanel, /aria-selected=\{mainTab === tab\}/);
+
+console.log('resource-tabs-drag.verify: category and main tabs drag without accidental selection');

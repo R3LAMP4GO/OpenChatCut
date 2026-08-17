@@ -18,9 +18,9 @@ This skill is for deliberate editorial transitions, not for applying J-cuts to e
 Unless the user gives a different direction:
 
 - Use J-cuts only at clear sentence or thought boundaries.
-- Default audio lead: **180–280 ms**.
-- Use **300–450 ms** only when the incoming line is a clear hook, answer, or reveal and the outgoing image remains relevant.
-- Use a short **50–100 ms audio crossfade** when it prevents a click or abrupt room-tone shift.
+- Default audio lead: **0.5 seconds**, quantized to whole timeline frames.
+- Use **0.2–0.4 seconds** (about 6–12 frames at 30 fps) for quick dialogue, **0.5–1 second** for cinematic pacing, and **1–2 seconds** for a deliberate hook, full phrase, or environmental bridge when the outgoing image remains relevant.
+- Use a short **0.05–0.1 second audio crossfade** when it prevents a click or abrupt room-tone shift.
 - Prefer 9:16 talking-head/product-demo pacing: purposeful, clean, and natural rather than hyperactive.
 - Do not use a J-cut where the outgoing picture contradicts, distracts from, or spoils the incoming spoken point.
 - Do not start a J-cut mid-word, mid-breath, or during a plosive/consonant attack unless the source audio is demonstrably clean.
@@ -44,7 +44,7 @@ Use one when all of these are true:
 
 Good examples:
 
-- The speaker says, “Here is what the dashboard actually shows,” while the talking-head shot remains for 200 ms, then the screen recording appears.
+- The speaker says, “Here is what the dashboard actually shows,” while the talking-head shot remains for 1 second, then the screen recording appears.
 - A second take begins, “The important part is this…,” just before the camera changes to that take.
 - The speaker introduces a product feature just before relevant B-roll or an app demonstration appears.
 
@@ -72,15 +72,13 @@ If more than three J-cuts are proposed, give a compact transition plan before ap
 
 ### 2. Create an audio-led incoming source
 
-Use the incoming clip's source asset to create an audio-only item on an audio track.
+Use the deterministic split-edit tools rather than manually calculating or sequencing low-level edits.
 
-- Place the audio item at `visualCutFrame - leadFrames`.
-- Align its source window so the audio heard at `visualCutFrame` matches the audio at the incoming visual clip's source in-point.
-- Include enough duration for a continuous handoff after the picture appears.
-- If the source has insufficient clean preroll, reduce the lead or skip the J-cut; do not fabricate audio.
-- Mute or otherwise prevent duplicate embedded audio on the incoming visual item for the covered interval. The final result must contain exactly one audible version of the incoming dialogue.
+1. Call `plan_split_edit` with `type: "j-cut"`, the adjacent outgoing/incoming item IDs, and the selected `durationSeconds`.
+2. Review its quantized duration, source alignment, audio track, muted interval, and `planRef`.
+3. Call `apply_split_edit` with the exact same inputs plus that `planRef`.
 
-Use existing timeline/media tools such as `edit_item`, `split_item`, `set_item_timing`, and `edit_track`. Prefer an atomic `edit_item` draft with `validateOnly: true` before publishing multiple linked changes.
+The executor creates the incoming raw audio-only item, aligns its source at the picture cut, splits/mutes the outgoing tail, mutes duplicate incoming embedded audio, validates source preroll and track overlap, and commits one undoable batch. If planning reports insufficient preroll, reduce the lead or skip the J-cut; do not fabricate audio. Do not reproduce this frame math with `edit_item` unless the deterministic tool explicitly reports an unsupported case.
 
 ### 3. Preserve the outgoing visual
 
@@ -90,7 +88,7 @@ If appropriate, add a very short visual transition at the visual cut. Avoid fade
 
 ### 4. Audio polish
 
-- Apply 50–100 ms fades/crossfades only when necessary to avoid clicks, room-tone jumps, or audible edits.
+- Apply 0.05–0.1 second fades/crossfades only when necessary to avoid clicks, room-tone jumps, or audible edits.
 - Keep dialogue intelligible. Do not cover the incoming line with music, sound effects, or competing speech.
 - Preserve intentional breathing room. A J-cut should create anticipation, not make the delivery feel rushed.
 
@@ -113,11 +111,11 @@ After applying the change:
 
 | Situation | Lead | Notes |
 |---|---:|---|
-| Talking head → screen recording | 220–350 ms | Start the feature explanation, then reveal the relevant UI. |
-| Talking head → relevant B-roll | 180–280 ms | The incoming spoken reference should motivate the B-roll. |
-| Take A → Take B, same speaker | 150–220 ms | Keep it subtle; avoid noticeable lip-sync mismatch. |
-| Interview question → answer | 250–450 ms | Use only if the question image remains relevant while the answer begins. |
-| Strong hook/reveal | 300–450 ms | Use sparingly and ensure the visual reveal lands with the important word. |
+| Talking head → screen recording | 0.5–1 second | Start the feature explanation, then reveal the relevant UI. |
+| Talking head → relevant B-roll | 0.5–1 second | The incoming spoken reference should motivate the B-roll. |
+| Take A → Take B, same speaker | 0.2–0.4 seconds | Keep it subtle; avoid noticeable lip-sync mismatch. |
+| Interview question → answer | 0.4–1 second | Use only if the question image remains relevant while the answer begins. |
+| Strong hook, reveal, or scene ambience | 1–2 seconds | Use sparingly and ensure the visual reveal lands with the important sound. |
 
 ## Hard constraints
 

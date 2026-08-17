@@ -9,8 +9,9 @@ import { loadCustomSkills, saveCustomSkill, deleteCustomSkill } from '../persist
 import type { CustomSkill } from '../persist/skillStore';
 import type { SkillDefinition } from '../agent/skills/skill-types';
 import { theme } from '../theme';
+import { CUT_STRATEGY_PREFERENCE_EVENT, cutStrategyEnabled, setCutStrategyEnabled } from '../agent/cutStrategyPreference';
 
-const BUILTIN_IDS = new Set(['long-video-to-shorts', 'multi-clips-to-reels', 'ai-cinematic-short-film', 'product-ad-video-script', 'explainer-video', 'motion-graphic-placement', 'storyboard-shot-breakdown', 'video-thumbnail-generator', 'skill-creator']);
+const BUILTIN_IDS = new Set(['long-video-to-shorts', 'multi-clips-to-reels', 'ai-cinematic-short-film', 'product-ad-video-script', 'explainer-video', 'motion-graphic-placement', 'storyboard-shot-breakdown', 'video-thumbnail-generator', 'skill-creator', 'cut-strategy-planner', 'shortform-clip-finder', 'j-cut-editor', 'l-cut-editor']);
 
 export function SkillsTabPanel({
   creativeMode,
@@ -24,8 +25,16 @@ export function SkillsTabPanel({
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<CustomSkill | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [automaticCutStrategy, setAutomaticCutStrategyState] = useState(cutStrategyEnabled);
   useEffect(() => {
     loadCustomSkills().then((list) => { setCustomSkills(list); bumpCustom((n) => n + 1); });
+    const syncCutStrategy = () => setAutomaticCutStrategyState(cutStrategyEnabled());
+    window.addEventListener(CUT_STRATEGY_PREFERENCE_EVENT, syncCutStrategy);
+    window.addEventListener('storage', syncCutStrategy);
+    return () => {
+      window.removeEventListener(CUT_STRATEGY_PREFERENCE_EVENT, syncCutStrategy);
+      window.removeEventListener('storage', syncCutStrategy);
+    };
   }, []);
   const skills = allCreativeSkills();
   const active = findSkill(creativeMode);
@@ -60,6 +69,30 @@ export function SkillsTabPanel({
           }}
         />
         <span style={{ position: 'absolute', left: 8, top: 7, color: theme.textDim, fontSize: 11, pointerEvents: 'none' }}>🔍</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 7, border: `0.5px solid ${automaticCutStrategy ? theme.accent : theme.borderLight}`, background: theme.panelAlt }}>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <strong style={{ display: 'block', fontSize: 12 }}>{t('自动剪辑策略')}</strong>
+          <small style={{ display: 'block', marginTop: 2, color: theme.textDim, lineHeight: 1.4 }}>{t('在常规剪辑、J-cut、L-cut 和匹配剪辑之间提供建议；默认关闭。')}</small>
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={automaticCutStrategy}
+          aria-label={t('自动剪辑策略')}
+          onClick={() => {
+            const enabled = !automaticCutStrategy;
+            setCutStrategyEnabled(enabled);
+            setAutomaticCutStrategyState(enabled);
+          }}
+          style={{
+            width: 38, height: 21, flex: '0 0 auto', borderRadius: 12, padding: 2,
+            border: `0.5px solid ${automaticCutStrategy ? theme.accent : theme.borderLight}`,
+            background: automaticCutStrategy ? theme.accent : theme.inset, cursor: 'pointer',
+          }}
+        >
+          <span style={{ display: 'block', width: 15, height: 15, borderRadius: '50%', background: '#fff', transform: `translateX(${automaticCutStrategy ? 16 : 0}px)`, transition: 'transform 120ms ease' }} />
+        </button>
       </div>
       {active && (
         <button

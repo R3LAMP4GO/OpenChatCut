@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useRef, useState, type RefObject } from 'react';
 import type { PlayerRef } from '@remotion/player';
 import { theme } from '../theme';
 import { useT } from '../i18n/locale';
@@ -31,6 +31,7 @@ import type { ZoomEffect } from '../editor/types';
 import { Icon } from '../components/icons';
 import { parseSrt } from '../captions/srt';
 import { createTranscriptCaptions } from '../captions/transcriptCaptions';
+import { createHorizontalTabDrag } from './resourceTabDrag';
 
 // Two built-in LUTs implemented with published camera-log transfer functions.
 // They apply through the same pipeline as other effects.
@@ -138,6 +139,8 @@ export function LibraryPanel({ semanticScopeId, templates, onAddTemplate, onAddA
   const [subTab, setSubTab] = useState<(typeof SUB_TABS)[number]>('MG 动画');
   const [extensionOpen, setExtensionOpen] = useState(false);
   const [directoryImportError, setDirectoryImportError] = useState<string | null>(null);
+  const mainTabDragRef = useRef<ReturnType<typeof createHorizontalTabDrag> | null>(null);
+  const suppressMainTabClickRef = useRef(false);
   const directoryImport = useDirectoryImport({
     projectId: semanticScopeId,
     fps,
@@ -187,14 +190,60 @@ export function LibraryPanel({ semanticScopeId, templates, onAddTemplate, onAddA
       window.alert(`${t('SRT 导入失败')}：${t(detail)}`);
     }
   };
+  const mainTabButton = (tab: (typeof MAIN_TABS)[number]) => (
+    <button type="button" role="tab" aria-selected={mainTab === tab}
+      onClick={() => { setExtensionOpen(false); setMainTab(tab); }}
+      className={`cc-main-tab${mainTab === tab ? ' selected' : ''}`}>{t(tab)}</button>
+  );
 
   return (
     <section className="cc-library-panel">
-      <div className="cc-main-tabs">
-        {MAIN_TABS.map((tab) => (
-          <button key={tab} onClick={() => { setExtensionOpen(false); setMainTab(tab); }}
-            className={`cc-main-tab${mainTab === tab ? ' selected' : ''}`}>{t(tab)}</button>
-        ))}
+      <div
+        className="cc-main-tabs"
+        role="tablist"
+        aria-label={t('资源库')}
+        onDragStart={(event) => event.preventDefault()}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          mainTabDragRef.current = createHorizontalTabDrag(event, event.currentTarget);
+        }}
+        onPointerMove={(event) => {
+          if ((event.buttons & 1) === 0) {
+            mainTabDragRef.current = null;
+            delete event.currentTarget.dataset.dragging;
+            return;
+          }
+          if (!mainTabDragRef.current?.move(event)) return;
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }
+          event.currentTarget.dataset.dragging = 'true';
+        }}
+        onPointerUp={(event) => {
+          const didDrag = mainTabDragRef.current?.end() ?? false;
+          mainTabDragRef.current = null;
+          delete event.currentTarget.dataset.dragging;
+          suppressMainTabClickRef.current = didDrag;
+          requestAnimationFrame(() => { suppressMainTabClickRef.current = false; });
+        }}
+        onPointerCancel={(event) => {
+          mainTabDragRef.current = null;
+          suppressMainTabClickRef.current = false;
+          delete event.currentTarget.dataset.dragging;
+        }}
+        onClickCapture={(event) => {
+          if (!suppressMainTabClickRef.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+          suppressMainTabClickRef.current = false;
+        }}
+      >
+        {mainTabButton(MAIN_TABS[0])}
+        {mainTabButton(MAIN_TABS[1])}
+        {mainTabButton(MAIN_TABS[2])}
+        {mainTabButton(MAIN_TABS[3])}
+        {mainTabButton(MAIN_TABS[4])}
+        {mainTabButton(MAIN_TABS[5])}
       </div>
       {extensionOpen ? (
         <ExtensionCenter onClose={() => setExtensionOpen(false)} />

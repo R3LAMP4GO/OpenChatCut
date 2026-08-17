@@ -25,9 +25,13 @@ const GENERATE_TARGETS = [
 
 const ROUTING_GROUPS: readonly RoutingGroup[] = [
   {
+    requestKeywords: ['cut strategy', 'match cut', 'podcast cuts', 'talking head cuts', 'when to use j-cut', 'when to use l-cut'],
+    tools: ['configure_cut_strategy', 'plan_cut_strategy', 'plan_split_edit', 'apply_split_edit'],
+  },
+  {
     mutating: true,
     requestKeywords: [
-      'trim', 'split', 'move clip', 'delete clip', 'remove clip', 'retime', 'slip edit',
+      'trim', 'split', 'j-cut', 'j cut', 'l-cut', 'l cut', 'move clip', 'delete clip', 'remove clip', 'retime', 'slip edit',
       'background fill', 'blur background', 'edit timeline',
       '剪辑', '裁剪', '分割', '移动片段', '删除片段', '移除片段', '变速', '滑动编辑',
       '背景填充', '模糊背景', '虚化背景',
@@ -35,7 +39,7 @@ const ROUTING_GROUPS: readonly RoutingGroup[] = [
     requestContext: [EDIT_VERBS, EDIT_TARGETS],
     tools: [
       'update_item_props', 'move_item', 'set_item_timing', 'duplicate_item', 'remove_item',
-      'split_item', 'manage_timelines', 'edit_track', 'edit_item', 'undo_last_change',
+      'split_item', 'plan_split_edit', 'apply_split_edit', 'configure_cut_strategy', 'plan_cut_strategy', 'manage_timelines', 'edit_track', 'edit_item', 'undo_last_change',
       'redo_last_change', 'apply_layout',
     ],
   },
@@ -68,7 +72,7 @@ const ROUTING_GROUPS: readonly RoutingGroup[] = [
     requestKeywords: ['transcript', 'script', 'speech', '文字稿', '台词', '口播', '讲稿'],
     tools: [
       'read_transcript', 'find_transcript', 'clean_script', 'edit_gap', 'delete_text',
-      'manage_transcript', 'read_script', 'apply_script',
+      'manage_transcript', 'read_script', 'apply_script', 'read_segment_plan', 'apply_segment_plan',
     ],
   },
   {
@@ -126,11 +130,11 @@ const ROUTING_GROUPS: readonly RoutingGroup[] = [
   },
   {
     requestKeywords: [
-      'scene', 'highlight', 'beat', 'downbeat', 'rhythm', 'multicam', 'reframe', 'color',
-      '镜头', '高光', '节拍', '卡点', '重拍', '节奏', '多机位', '重构图', '调色', '分析',
+      'scene', 'highlight', 'short-form', 'short form', 'viral clip', 'beat', 'downbeat', 'rhythm', 'multicam', 'reframe', 'color',
+      '镜头', '高光', '短视频', '短片', '节拍', '卡点', '重拍', '节奏', '多机位', '重构图', '调色', '分析',
     ],
     tools: [
-      'view_timeline_frames', 'view_asset_frames', 'detect_scenes', 'find_highlights', 'auto_reframe',
+      'view_timeline_frames', 'view_asset_frames', 'detect_scenes', 'find_highlights', 'plan_shortform_clips', 'apply_shortform_clips', 'auto_reframe',
       'multicam_sync', 'change_cam', 'inspect_color', 'auto_grade', 'detect_beats', 'inspect_music',
       'music_image_plan', 'sync_images_to_music',
       'review_scene_plan',

@@ -8,6 +8,7 @@ import { serverProviderOptions } from './model.ts';
 import { validateCreateInput } from './request.ts';
 import {
   collectServerText,
+  MAX_SERVER_RUN_TURNS,
   resolveServerRunCapabilities,
   resolveServerRunMaxOutputTokens,
   serverRunTextMetadata,
@@ -251,15 +252,24 @@ resetServerRunStoreForTest();
 
 console.log('server agent executor message verification passed');
 
-// Turn disposition: the unbounded loop keeps going while the model requests
-// tools, completes when it stops, and cuts off on an output-token ceiling
-// instead of feeding truncated text back into the next turn.
-assert.equal(turnDisposition(false, true), 'continue');
-assert.equal(turnDisposition(false, false), 'completed');
-assert.equal(turnDisposition(true, true), 'max-tokens', 'output cutoff wins over pending tool calls');
+// Turn disposition is finite: completion and token cutoffs win immediately;
+// persistent tool calls stop at the same 30-turn ceiling as browser/Codex runs.
+assert.equal(MAX_SERVER_RUN_TURNS, 30);
+assert.equal(turnDisposition(false, true, 29), 'continue');
+assert.equal(turnDisposition(false, true, 30), 'max-turns');
+assert.equal(turnDisposition(false, false, 30), 'completed', 'a naturally completed final turn is not reported as capped');
+assert.equal(turnDisposition(true, true, 30), 'max-tokens', 'output cutoff wins over both pending tools and turn cap');
 assert.equal(turnDisposition(true, false), 'max-tokens');
+let simulatedTurns = 0;
+let simulatedDisposition: ReturnType<typeof turnDisposition> = 'continue';
+while (simulatedDisposition === 'continue') {
+  simulatedTurns += 1;
+  simulatedDisposition = turnDisposition(false, true, simulatedTurns);
+}
+assert.equal(simulatedTurns, MAX_SERVER_RUN_TURNS, 'persistent tool calls terminate exactly at the cap');
+assert.equal(simulatedDisposition, 'max-turns');
 
-console.log('server executor turn-disposition checks passed');
+console.log('AGENT_LOOP_CAP_PASSED: persistent tool calls terminate at 30 turns with explicit max-turns state');
 
 // issue #81: server-side capability resolution must honor the keystore-backed
 // AGENT_MODEL_CAPABILITY_OVERRIDES exactly like the browser model-selection

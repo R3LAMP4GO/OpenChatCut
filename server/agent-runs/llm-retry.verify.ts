@@ -3,6 +3,7 @@ import { APICallError } from 'ai';
 import {
   classifyLlmFailure,
   isRetryableLlmFailure,
+  llmRetryDisposition,
   MAX_LLM_ATTEMPTS,
   MAX_RETRY_DELAY_MS,
   resolveRetryDelayMs,
@@ -62,6 +63,16 @@ for (const code of ['AUTH', 'INVALID_REQUEST', 'QUOTA', 'CONTEXT_WINDOW_EXCEEDED
   assert.equal(isRetryableLlmFailure(code as never), false, code);
 }
 
+// Retry state is explicitly finite: transient failures get at most two
+// retries, while deterministic failures and the third failed call terminate.
+assert.equal(MAX_LLM_ATTEMPTS, 3);
+assert.equal(llmRetryDisposition('SERVER', 1), 'retry');
+assert.equal(llmRetryDisposition('SERVER', 2), 'retry');
+assert.equal(llmRetryDisposition('SERVER', 3), 'failed');
+assert.equal(llmRetryDisposition('AUTH', 1), 'failed');
+assert.equal(llmRetryDisposition('INVALID_REQUEST', 1), 'failed');
+assert.equal(llmRetryDisposition('SERVER', 0), 'failed', 'invalid attempt state fails closed');
+
 // Rate-limit retries honor Retry-After within the max cap.
 const rateLimited = { code: 'RATE_LIMIT' as const, message: '', retryAfterMs: 3000 };
 assert.equal(resolveRetryDelayMs(rateLimited, 0), 3000);
@@ -76,4 +87,4 @@ for (let attempt = 0; attempt < MAX_LLM_ATTEMPTS; attempt += 1) {
   assert.ok(delay >= 0 && delay <= MAX_RETRY_DELAY_MS, `attempt ${attempt}: ${delay}`);
 }
 
-console.log('server llm-retry classification checks passed');
+console.log('AGENT_RETRY_FAILURE_PASSED: transient retries stop after three attempts; deterministic and invalid states fail closed');
