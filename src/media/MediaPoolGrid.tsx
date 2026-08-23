@@ -42,6 +42,8 @@ interface MediaPoolGridProps {
   onRelink: (id: string) => void;
   onToggleSelected: (id: string) => void;
   onSetSelected: (ids: string[]) => void;
+  onTranscribe?: (id: string) => void;
+  onOpenTranscript?: (id: string) => void;
 }
 
 type MarqueeState = {
@@ -229,6 +231,8 @@ function MediaVirtualRows(props: MediaPoolGridProps & ReturnType<typeof useMedia
               onToggleSelected={props.onToggleSelected}
               onSetSelected={props.onSetSelected}
               onSetFavorite={props.onSetFavorite}
+              onTranscribe={props.onTranscribe}
+              onOpenTranscript={props.onOpenTranscript}
             />)}
       </div>)}
     </div>

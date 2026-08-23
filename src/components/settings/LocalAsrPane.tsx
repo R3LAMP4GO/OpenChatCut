@@ -63,7 +63,8 @@ export function LocalAsrPane({ fields, ctx }: { fields: readonly SettingsField[]
         .then((capabilities) => {
           if (active) {
             setDesktopInferenceSupported(
-              capabilities.platform === 'darwin' || capabilities.platform === 'win32',
+              capabilities.platform === 'darwin' || capabilities.platform === 'win32'
+                || capabilities.platform === 'linux',
             );
           }
         })
@@ -156,7 +157,7 @@ export function LocalAsrPane({ fields, ctx }: { fields: readonly SettingsField[]
         : 0;
       return { text: t('下载中 {pct}%', { pct }), color: theme.accent };
     }
-    if (task?.status === 'error') return { text: t('下载失败'), color: '#f77' };
+    if (task?.status === 'error') return { text: t('下载失败'), color: theme.danger };
     if (m.downloaded) return { text: t('已下载'), color: theme.success };
     return { text: t('未下载'), color: theme.textDim };
   };
@@ -197,7 +198,7 @@ export function LocalAsrPane({ fields, ctx }: { fields: readonly SettingsField[]
           <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <span style={{ fontSize: 12, fontWeight: 600 }}>{t('桌面原生推理加速')}</span>
             <span style={{ fontSize: 11, color: theme.textDim, lineHeight: 1.45 }}>
-              {t('启用后，转写、画面语义、节拍与音乐语义模型自动选择 Windows DirectML 或 macOS CoreML/原生 CPU；转写模型在编辑器打开后后台预热，其他模型首次使用时按需加载；失败时回退浏览器引擎。')}
+              {t('启用后，转写使用 macOS Metal 或原生 CPU；画面语义、节拍与音乐语义模型自动选择 Windows DirectML、Linux CUDA、macOS CoreML 或浏览器 WebGPU；失败时回退 CPU 或浏览器引擎。')}
             </span>
           </span>
         </label>
@@ -220,7 +221,7 @@ export function LocalAsrPane({ fields, ctx }: { fields: readonly SettingsField[]
         {t('模型按需下载到本机，不随应用打包。首次使用或下载模型时自动加速下载。')}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-        {loadError && <div style={{ fontSize: 11.5, color: '#f77' }}>{t('无法读取模型列表：{err}', { err: loadError })}</div>}
+        {loadError && <div style={{ fontSize: 11.5, color: theme.danger }}>{t('无法读取模型列表：{err}', { err: loadError })}</div>}
         {!loadError && !models && <div style={{ fontSize: 11.5, color: theme.textDim }}>{t('读取中…')}</div>}
         {(models ?? []).map((m) => {
           const status = statusLabel(m);

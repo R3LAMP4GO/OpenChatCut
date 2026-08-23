@@ -6,6 +6,116 @@ OpenChatCut 的重要变更记录在此。
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use [Semantic Versioning](https://semver.org/).  
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.9] - 2026-08-20
+
+### Added / 新增
+
+- Desktop native inference now records CPU/GPU capabilities and selects CoreML/Metal, DirectML, CUDA, WebGPU, or CPU per supported workload; Linux packages now include the native inference workers and ONNX Runtime.
+  桌面端原生推理现会记录 CPU/GPU 能力，并按工作负载选择 CoreML/Metal、DirectML、CUDA、WebGPU 或 CPU；Linux 安装包同步内置原生推理 worker 与 ONNX Runtime。
+
+### Fixed / 修复
+
+- Desktop imports again create durable managed media copies, keeping preview, normalization, and server-side export reachable after the original file moves or a removable volume is disconnected.
+  桌面端导入恢复为可持久的受管素材副本，原文件移动或移动磁盘断开后，预览、规范化与服务端导出仍可访问素材。
+- Media processing now applies software encoder thread limits to output encoders, keeps CFR compatibility normalization for large VFR sources, routes probes through the shared low-priority launcher, and releases settled multipart metadata queues.
+  媒体处理现会将软编码线程上限应用到输出编码器，为大型 VFR 素材保留 CFR 兼容性转换，通过共享低优先级启动器执行探测，并及时释放已结束的分片元数据队列。
+- The Agent run inspector refreshes its sidecar when opened, so the newest run, tool result, and context metrics appear immediately without reloading the editor.
+  Agent 运行检查器打开时会刷新旁车记录，无需重新加载编辑器即可显示最新运行、工具结果与上下文指标。
+
+## [0.2.8] - 2026-08-20
+
+### Added / 新增
+
+- Atlas Cloud text-to-music and Sonilo video-to-music/video-to-SFX providers are available from settings and native Agent tools, including asynchronous job recovery and license sidecars.
+  新增 Atlas Cloud 文生音乐与 Sonilo 视频配乐/视频音效，可从设置和 Agent 原生工具调用，并支持异步任务恢复与许可证旁车文件。
+- The Agent now surfaces missing creative capabilities with an in-editor settings entry and returns actionable diagnostics for unavailable editing tools.
+  Agent 现在会提示缺失的创作能力、提供编辑器内设置入口，并在编辑工具不可用时返回可执行的诊断步骤。
+
+### Fixed / 修复
+
+- Windows H.264 export now probes and uses NVIDIA NVENC, Intel Quick Sync, or AMD AMF when available, preserves automatic libx264 fallback, and avoids hardware-frame/CPU-filter conflicts during frame-rate conversion.
+  Windows H.264 导出会探测并优先使用 NVIDIA NVENC、Intel Quick Sync 或 AMD AMF，保留 libx264 自动回退，并修复帧率转换中的硬件帧与 CPU 滤镜冲突。
+- External MCP registration now keeps a stable token and fallback port across desktop restarts, including first-launch race handling and per-profile isolation.
+  外部 MCP 注册的令牌与备用端口现可跨桌面端重启保持稳定，并处理首次启动竞态与多 profile 隔离。
+- Sonilo source matching, streamed uploads, response parsing, and persisted sound jobs were hardened so large inputs and interrupted sessions recover predictably.
+  加固 Sonilo 素材匹配、流式上传、响应解析和音效任务持久化，使大素材与中断会话可稳定恢复。
+
+## [0.2.7] - 2026-08-17
+
+### Added / 新增
+
+- Marking mode: while playing, the playhead follows the audible media element's own clock (with audio output-latency compensation), so beat markers stay locked to the sound even when the main thread stalls (#90).
+  打标记模式：播放时播放头跟随音频元素自身时钟（含音频输出延迟补偿），主线程卡顿时节拍标记仍与听到的声音对齐（#90）。
+
+### Fixed / 修复
+
+- Server-run drafts failed with 'could not be persisted' after a tab switch or browser restart — the run capability was stored in sessionStorage (per-tab, wiped on close). It now persists in localStorage, and the draft error message carries the actual reason (403 capability lost / 404 run gone).
+  切换标签页或重启浏览器后 server-run 草稿报"could not be persisted"——运行凭证原本存在 sessionStorage（按标签页隔离、关闭即清）。现改存 localStorage，且草稿报错附带真实原因（403 凭证丢失 / 404 运行不存在）。
+
+## [0.2.6] - 2026-08-17
+
+### Added / 新增
+
+- Transition badges on the timeline gain a right-click menu: five duration presets (0.2/0.3/0.5/1/2s) and remove-transition, without hunting through clip effect lists (#88).
+  时间线转场角标新增右键菜单：五档时长预设（0.2/0.3/0.5/1/2 秒）与删除转场，不用再去片段特效列表里翻找（#88）。
+- Renderer GL backend now resolves per platform: angle (Metal/D3D) on macOS/Windows, angle-egl on Linux, with CC_RENDER_GL override for diagnosis. GPU compositing benchmarked ~2.2x faster than software.
+  渲染 GL 后端按平台解析：macOS/Windows 用 angle（Metal/D3D），Linux 用 angle-egl，支持 CC_RENDER_GL 覆盖诊断。实测 GPU 合成比软件渲染快约 2.2 倍。
+
+### Fixed / 修复
+
+- Snapshot model ids (qwen3.7-plus-2026-05-26 style) now resolve to their base catalog entry, and the unknown-model fallback is grounded in the catalog (context 409,600 / output 65,536) with an in-editor estimate hint — no more 'request is too large' for catalog misses.
+  快照式模型 ID（如 qwen3.7-plus-2026-05-26）现匹配到基座条目；未知模型兜底值按目录统计校准（上下文 409,600 / 输出 65,536）并在编辑器提示估算——目录外模型不再报"request is too large"。
+- project-store.verify redirects USERPROFILE on Windows so the check uses its temp root (#89).
+  project-store.verify 在 Windows 上重定向 USERPROFILE，检查使用临时根目录（#89）。
+
+## [0.2.5] - 2026-08-17
+
+### Added / 新增
+
+- User-adjustable UI scale (80%–150%) in Settings → 界面, with Ctrl/Cmd + Plus/Minus/0 zoom shortcuts persisted to the keystore; composes with the automatic shrink-to-fit window scaling (#85).
+  设置 → 界面新增 UI 缩放（80%–150%），支持 Ctrl/Cmd + +/-/0 快捷键并持久化；与窗口自动收缩缩放组合生效（#85）。
+- End-to-end CI coverage for agent local-path import: whitelist containment, tool schema, browser gate, and a real main-process import chain (fingerprint, copy, probe, dedupe) run on every release (#84).
+  Agent 本地路径导入的端到端 CI 覆盖：白名单、工具 schema、浏览器降级、真实主进程导入链（指纹/副本/探测/去重），每次发版执行（#84）。
+
+### Fixed / 修复
+
+- Editor bridge heartbeat dropped offline (connected:false) when the desktop window was minimized or covered — Electron background throttling now disabled on both editor windows, verified at runtime in the platform smoke tests (#86).
+  桌面窗口最小化或被遮挡时编辑桥心跳掉线（connected:false）——两个编辑窗口均关闭 Electron 后台节流，并在三平台 smoke 中做运行时断言（#86）。
+- UI consistency pass: off-scale corner radii unified to the 0/2/4/6 scale, stray hardcoded colors (#f77, #e5866a, #a63d38) moved to --cc-* tokens so skins stay consistent.
+  UI 一致性修复：非标圆角统一到 0/2/4/6 标度，残留硬编码颜色改用 --cc-* token，换肤保持一致。
+
+## [0.2.4] - 2026-08-16
+
+### Added / 新增
+
+- Media-pool transcription: per-card transcribe button with live status badges, batch transcription from the asset menu, and an auto-transcribe-on-ingest policy (off / local engine / all engines) that protects cloud budgets by default.
+  媒体池级转写：卡片转写按钮与实时状态徽章、右键批量转写、导入后自动转写开关（关/仅本地引擎/全部引擎，默认仅本地，保护云端额度）。
+- Transcript reader in the media pool: read the full transcript with timestamped paragraphs, copy full text, and step across every transcribed asset — in-page floating panel on web, independent draggable desktop window in the Electron build.
+  媒体池文字稿查看：按段落与时间戳通读全部转写稿、一键复制全文、跨素材上/下条切换——网页端为可拖浮层，桌面端为可脱离主窗口的独立浮窗。
+- Document attachments: drag md/txt/srt/csv into the composer, lazy-load docx (mammoth) and pdf (pdfjs-dist) parsing (#84).
+  文档附件：md/txt/srt/csv 直接拖入输入框，docx/pdf 懒加载解析（#84）。
+- Local-path media import for the agent: import_asset / import_folder tools gated by the AGENT_IMPORT_ROOTS whitelist (#84).
+  Agent 本地路径导入：import_asset / import_folder 工具 + AGENT_IMPORT_ROOTS 白名单（#84）。
+- hf-cdn.sufy.com as a high-speed model download fallback source.
+  新增 hf-cdn.sufy.com 高速模型下载源。
+- User-selectable project storage location with safe media relocation; isolated development profiles stay isolated, and active SQLite stores are explicitly kept in place until snapshot-based relocation is available.
+  工程存储位置可自定义并安全迁移素材；隔离开发 profile 保持隔离，已启用的 SQLite 工程库会明确留在原目录，等待后续快照式迁移。
+- followup answers and run timing persist across reloads; server-run output flushes every 2s so reloads keep it.
+  followup 答案与运行计时跨刷新持久化；服务端运行输出每 2 秒落盘，刷新不丢。
+
+### Fixed / 修复
+
+- Rotation-coded portrait footage (iPhone-style) was recognized as 16:9; the probe now honors rotation side-data/tags and reports the displayed aspect.
+  旋转元数据的竖拍素材（iPhone 风格）被识别为 16:9；探测现按 rotation 元数据报告显示宽高比。
+- FCPXML exports now include pathurl with native UTF-8 paths so DaVinci Resolve relinks Chinese-named media (#27).
+  FCPXML 导出新增原生 UTF-8 路径的 pathurl，达芬奇可自动重连中文名素材（#27）。
+- Server-run capability overrides are applied on the agent run path (#81).
+  服务端运行路径应用能力覆盖（#81）。
+- Shared-store fallback degrades safely when remote bootstrap fails; editor leases refresh during long polls (#63/#70/#71).
+  共享存储降级在远端引导失败时安全回退；编辑器租约在长轮询期间刷新（#63/#70/#71）。
+- Pool card control buttons (favorite / menu / transcribe) were swallowed by the card click-capture — clicks now reach them.
+  媒体池卡片操作按钮（收藏/菜单/转写）被卡片点击捕获吞掉——点击现已正常到达。
+
 ## [0.2.3] - 2026-08-14
 
 ### Added / 新增

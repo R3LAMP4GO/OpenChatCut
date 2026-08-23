@@ -12,9 +12,7 @@ import { pipeline } from 'node:stream/promises';
 import {
   deleteUploadObject, putUploadFile, r2Config, UploadTooLargeError,
 } from '../r2.ts';
-import {
-  enqueueUploadMutation, isSafeUploadName, uploadReadDirs,
-} from '../media-dir.ts';
+import { enqueueUploadMutation, isSafeUploadName, uploadReadDirs } from '../media-dir.ts';
 import { deleteMediaPreviewDerivatives } from './media-preview.ts';
 import { contentLengthOf, sendError, sendJson } from './upload-route-http.ts';
 

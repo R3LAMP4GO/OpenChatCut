@@ -128,14 +128,16 @@ const MODEL_ROUTING_NAMES = [
   'GROQ_TRANSCRIPTION_MODEL', 'ELEVENLABS_TRANSCRIPTION_MODEL', 'CARTESIA_TRANSCRIPTION_MODEL', 'GROQ_BASE_URL',
   'DOUBAO_TTS_RESOURCE_ID', 'SEEDANCE_VIDEO_MODEL', 'KLING_VIDEO_MODEL', 'MUREKA_MUSIC_MODEL',
   'MINIMAX_TTS_MODEL', 'MINIMAX_VIDEO_MODEL', 'MINIMAX_MUSIC_MODEL', 'MINIMAX_IMAGE_MODEL',
+  'ATLASCLOUD_API_BASE', 'ATLASCLOUD_MUSIC_MODEL',
   'WAVESPEED_IMAGE_MODEL', 'BYTEPLUS_IMAGE_MODEL', 'BYTEPLUS_VIDEO_MODEL',
   'INWORLD_TTS_MODEL', 'FISHAUDIO_TTS_MODEL', 'SPEECHIFY_TTS_MODEL',
   'PREFERRED_IMAGE_VENDOR', 'PREFERRED_VOICE_VENDOR', 'PREFERRED_VIDEO_VENDOR', 'PREFERRED_MUSIC_VENDOR',
-  'PREFERRED_TRANSCRIPTION_PROVIDER', 'TRANSCRIPTION_LANGUAGE', 'TRANSCRIPTION_DIARIZATION',
+  'PREFERRED_TRANSCRIPTION_PROVIDER', 'TRANSCRIPTION_LANGUAGE', 'TRANSCRIPTION_DIARIZATION', 'AUTO_TRANSCRIBE_INGEST', 'UI_SCALE',
   'LOCAL_ASR_MODEL', // On-device ASR model tier: '' | tiny | base | small | medium
   'R2_ENABLED', // Cloud synchronization switch (''=enable/'0'=disable)
   'R2_PRESIGN', // Browser pre-signed direct transmission (''=enabled/'0'=server-side write-through only)
-  'MEDIA_DIR',  // Asset saving directory (''=default public/media/uploads)
+  'MEDIA_DIR',  // Asset saving directory (''=default public/media/uploads),
+  'AGENT_IMPORT_ROOTS', // Agent local-path import whitelist (comma-separated absolute dirs)
   'OPENCHATCUT_SKILLS_DIR', // User skill files directory (''=~/.openchatcut/skills)
   'PROXY_URL', // Outbound network proxy (''=use HTTPS_PROXY/HTTP_PROXY env)
 ] as const;

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { dirname } from 'node:path';
+import { ffmpegThreadArgs } from './media-process.ts';
 
 export type H264Encoder =
   | 'h264_videotoolbox'
@@ -30,7 +31,10 @@ interface PromiseConstructorWithResolvers {
 const promiseConstructor = Promise as unknown as PromiseConstructorWithResolvers;
 
 const DEFAULT_VAAPI_DEVICE = '/dev/dri/renderD128';
-const PROBE_FRAME_SIZE = 64;
+// Blackwell (RTX 50) NVENC rejects frames below 160x160; 64x64 probes made
+// every NVIDIA GPU silently fall back to libx264. 160 passes on all known
+// NVENC/QSV/AMF generations while staying cheap to encode.
+const PROBE_FRAME_SIZE = 160;
 const PROBE_FRAME_BYTES = PROBE_FRAME_SIZE * PROBE_FRAME_SIZE * 3 / 2;
 const VAAPI_DEVICE_PATTERN = /^\/dev\/dri\/renderD\d+$/;
 const ENCODER_LABELS: Record<H264Encoder, string> = {
@@ -56,10 +60,10 @@ const encoderCache = new Map<string, Promise<H264Encoder>>();
 const compiledEncoderCache = new Map<string, Promise<boolean>>();
 const hwAccelsCache = new Map<string, Promise<Set<string>>>();
 
-/** 平台感知的解码硬加速参数。编码器已知时用同 API（解码/编码同硬件上下文），
- * 否则按平台通用选择。内部 hwaccel 在流不支持时自动回退软件解码，无格式风险：
- * 解码帧输出系统内存（nv12），与现有 CPU filter 链完全兼容。 */
+/** 平台感知的解码硬加速参数。软件编码必须使用系统内存帧；
+ * 硬件编码器已知时使用匹配 API，否则按平台选择通用解码器。 */
 export function hwDecodeArgs(encoder?: H264Encoder): string[] {
+  if (encoder === 'libx264') return [];
   if (encoder === 'h264_videotoolbox') return ['-hwaccel', 'videotoolbox'];
   if (encoder === 'h264_nvenc') return ['-hwaccel', 'cuda'];
   if (encoder === 'h264_qsv') return ['-hwaccel', 'qsv'];
@@ -94,16 +98,24 @@ async function availableHwAccels(ffmpeg: string): Promise<Set<string>> {
   return promise;
 }
 
-const qualityModeCache = new Map<string, Promise<boolean>>();
+const qualityModeCache = new Map<string, Promise<H264QualityMode | false>>();
+
+/** How a hardware encoder build exposes constant-quality mode:
+ * modern NVENC API (`-rc_mode CQP -global_quality`) vs the legacy SDK
+ * (`-rc constqp -qp`) shipped by e.g. ffmpeg-static 6.x essentials builds. */
+export type H264QualityMode = 'cqp' | 'legacy-qp';
 
 /** Whether the ffmpeg build's hardware encoder accepts constant-quality mode
- * (-q:v / -global_quality / rc_mode CQP / -qp). Cached per encoder. */
-export async function probeEncoderQualityMode(ffmpeg: string, encoder: H264Encoder): Promise<boolean> {
+ * and, when it does, which argument style it speaks. Cached per encoder. */
+export async function probeEncoderQualityMode(
+  ffmpeg: string,
+  encoder: H264Encoder,
+): Promise<H264QualityMode | false> {
   if (encoder === 'libx264') return false;
   const key = `${ffmpeg}\0${encoder}`;
   const cached = qualityModeCache.get(key);
   if (cached) return cached;
-  const { promise, resolve } = promiseConstructor.withResolvers<boolean>();
+  const { promise, resolve } = promiseConstructor.withResolvers<H264QualityMode | false>();
   const child = spawn(ffmpeg, ['-hide_banner', '-h', `encoder=${encoder}`], {
     cwd: dirname(ffmpeg),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -117,7 +129,11 @@ export async function probeEncoderQualityMode(ffmpeg: string, encoder: H264Encod
   child.once('close', () => {
     clearTimeout(timer);
     const supported = /\b(?:q:v|global_quality|rc_mode|qp_i| -qp |qp)\b/i.test(output);
-    resolve(supported);
+    const mode = !supported ? false
+      : encoder === 'h264_nvenc' && /\brc_mode\b/i.test(output) ? 'cqp'
+        : encoder === 'h264_nvenc' ? 'legacy-qp'
+          : 'cqp';
+    resolve(mode);
   });
   qualityModeCache.set(key, promise);
   return promise;
@@ -275,7 +291,7 @@ export async function selectWorkingH264Encoder(
 
 /**
  * Encoder-list checks cannot prove that a GPU and driver are usable. Encode one
- * 64x64 frame once per process and cache the first working encoder.
+ * 160x160 frame once per process and cache the first working encoder.
  */
 export function resolveH264Encoder(
   ffmpeg: string,
@@ -297,7 +313,15 @@ export function resolveH264Encoder(
   const resolving = selectWorkingH264Encoder(
     candidates,
     (encoder) => probeEncoder(ffmpeg, encoder, vaapiDevice),
-  );
+  ).then((encoder) => {
+    if (encoder === 'libx264' && candidates.some((candidate) => candidate !== 'libx264')) {
+      console.warn(
+        `[media-acceleration] no working hardware H.264 encoder (probed: ${candidates.join(', ')}); ` +
+        'import normalization and export will use libx264 software encoding',
+      );
+    }
+    return encoder;
+  });
   encoderCache.set(key, resolving);
   return resolving;
 }
@@ -345,6 +369,9 @@ export interface H264EncodingOptions {
    * the encoder build, replaces bitrate mode for proxy transcodes: same
    * perceptual quality at lower bitrate and less rate-control CPU. */
   hardwareQuality?: number;
+  /** Argument style reported by probeEncoderQualityMode; defaults to the
+   * modern NVENC API when omitted. */
+  qualityMode?: H264QualityMode;
 }
 
 /** High-quality average bitrate scaled by output pixels and frame rate (4K headroom up to 60 Mbps). */
@@ -373,13 +400,14 @@ export function h264EncodingArgs({
   softwareCrf = 18,
   softwarePreset = 'medium',
   hardwareQuality,
+  qualityMode,
 }: H264EncodingOptions): string[] {
   const pixelFormat = encoder === 'h264_vaapi'
     ? 'vaapi'
     : encoder === 'h264_qsv' || encoder === 'h264_amf' ? 'nv12' : 'yuv420p';
   const args = ['-c:v', encoder, '-pix_fmt', pixelFormat];
   if (encoder === 'libx264') {
-    args.push('-preset', softwarePreset);
+    args.push(...ffmpegThreadArgs(), '-preset', softwarePreset);
     if (!targetBitrate) return [...args, '-crf', String(softwareCrf)];
     const ceiling = maxBitrate ?? targetBitrate;
     return [...args,
@@ -390,7 +418,11 @@ export function h264EncodingArgs({
   }
   if (hardwareQuality !== undefined) {
     const q = String(hardwareQuality);
-    if (encoder === 'h264_nvenc') return [...args, '-rc_mode', 'CQP', '-global_quality', q];
+    if (encoder === 'h264_nvenc') {
+      return qualityMode === 'legacy-qp'
+        ? [...args, '-rc', 'constqp', '-qp', q]
+        : [...args, '-rc_mode', 'CQP', '-global_quality', q];
+    }
     if (encoder === 'h264_qsv') return [...args, '-global_quality', q];
     if (encoder === 'h264_videotoolbox') return [...args, '-q:v', q];
     if (encoder === 'h264_amf') return [...args, '-rc', 'cqp', '-qp_i', q, '-qp_p', q];

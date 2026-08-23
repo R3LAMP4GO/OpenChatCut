@@ -17,6 +17,14 @@ import {
   LOCAL_MEDIA_IMPORT_CHANNEL,
 } from './local-media-bridge.ts';
 
+const mainSource = await readFile(new URL('./main.ts', import.meta.url), 'utf8');
+assert.match(
+  mainSource,
+  /createLocalMediaImportHandler\(importLocalMedia\)/,
+  'desktop main must import a durable managed copy',
+);
+assert.doesNotMatch(mainSource, /importLocalMediaReference/, 'desktop main must not bind reference-only imports');
+
 assert.equal(hasAlphaPixelFormat('yuva444p10le'), true, 'ProRes 4444 alpha must be detected');
 assert.equal(hasAlphaPixelFormat('gbrap12le'), true, 'planar RGB alpha must be detected');
 assert.equal(hasAlphaPixelFormat('yuv420p'), false, 'ordinary video must stay opaque');
@@ -46,6 +54,7 @@ assert.equal(args[audioCodecIndex + 1], 'libopus', 'WebM proxy audio must use br
 assert.ok(args.includes('yuva420p'), 'proxy must preserve alpha');
 assert.ok(args.includes('alpha_mode=1'), 'proxy must label VP9 alpha for Chromium');
 assert.equal(args.includes('libx264'), false, 'H.264 would discard alpha');
+assert.ok(args.indexOf('-threads') > args.indexOf('-c:v'), 'VP9 encoder threads belong to the output option group');
 
 const previousMediaDir = process.env.MEDIA_DIR;
 const testRoot = await mkdtemp(join(tmpdir(), 'openchatcut-local-import-'));
@@ -111,10 +120,10 @@ try {
   assert.equal(importedLarge.storedName.endsWith('.mp4'), true);
   assert.equal(
     simulatedHashPath,
-    join(uploadDirectory, importedLarge.storedName),
-    'large imports hash the copied destination through the injected streaming boundary',
+    '',
+    'multi-GiB imports skip the full-file SHA-256 pass to avoid doubling disk I/O',
   );
-  assert.equal(importedLarge.contentHash, 'a'.repeat(64), 'injected SHA-256 is normalized to lowercase');
+  assert.equal(importedLarge.contentHash, '', 'large imports report no content hash (dedup disabled)');
 
   const bridgeFile = { name: 'camera-original.mov' } as File;
   const bridgeSourcePath = join(testRoot, 'camera-original.mov');

@@ -1,7 +1,5 @@
 import './chdir-first.ts';
-import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -28,7 +26,12 @@ import { installDesktopUpdateIpc } from './update-ipc.ts';
 import { supportsDirectDesktopUpdates } from './update-service.ts';
 import { installDesktopInferenceIpc } from './native-inference-ipc.ts';
 import { installParakeetIpc } from './parakeet-ipc.ts';
+import { detectDesktopHardwareProfile } from './native-hardware-profile.ts';
 import { installDirectoryWatchIpc } from './directory-watch-ipc.ts';
+import { importAgentPaths } from './agent-path-import.ts';
+import { getKey, setKeys } from '../server/keystore.ts';
+import { AGENT_PATH_IMPORT_CHANNEL } from '../shared/directory-import.ts';
+import { isTranscriptWindowPayload, TRANSCRIPT_WINDOW_CHANNELS, type TranscriptWindowPayload } from '../shared/transcript-window.ts';
 import {
   assertTrustedDesktopSenderUrl,
   resolveDesktopDevOrigin,
@@ -39,12 +42,20 @@ import { preparePackagedRuntime } from './packaged-runtime.ts';
 import { focusExistingWindow } from './single-instance.ts';
 import { requestProfileScopedSingleInstanceLock } from './runtime-profile.ts';
 import { applyDesktopWindowFrame, desktopWindowFrameOptions } from './window-frame.ts';
-import { installResponsiveWindowScale, resolveInitialDesktopWindowBounds } from './window-scale.ts';
+import { applyResponsiveWindowScale, DESKTOP_UI_SCALE_MAX, DESKTOP_UI_SCALE_MIN, installResponsiveWindowScale, parseUserUiScale } from './window-scale.ts';
+import { resolveInitialDesktopWindowBounds } from './window-scale.ts';
 import {
   createExportDirectoryGrant,
   type ExportDirectoryGrantDescriptor,
 } from '../server/export-destinations.ts';
 import { resolveExportRevealTarget } from './export-reveal.ts';
+import {
+  persistExportDirectory,
+  resolvePersistedExportDestination,
+  restorePersistedExportDirectory,
+  validatedDirectory,
+  validDesktopExportFilename,
+} from './export-directory-state.ts';
 import { runDesktopSmokeProbe } from './smoke-probe.ts';
 import { runtimeProfile } from '../server/runtime-profile.ts';
 
@@ -66,26 +77,6 @@ const SMOKE = process.env.CC_SMOKE === '1';
 const SMOKE_RENDER = process.env.CC_SMOKE_RENDER === '1';
 const SMOKE_TIMEOUT_MS = SMOKE_RENDER ? 240_000 : 90_000;
 let mainWindow: BrowserWindow | null = null;
-
-interface StoredExportDirectory {
-  version: 2;
-  currentDestinationId: string;
-  destinations: Array<{
-    destinationId: string;
-    path: string;
-  }>;
-}
-
-interface ExportDirectoryState {
-  currentPath: string | null;
-  destinations: StoredExportDirectory['destinations'];
-}
-
-const DESKTOP_DESTINATION_ID = /^[A-Za-z0-9_-]{32,128}$/;
-const MAX_STORED_EXPORT_DESTINATIONS = 256;
-const MAX_EXPORT_DESTINATION_STATE_BYTES = 512 * 1_024;
-const INVALID_DESKTOP_EXPORT_FILENAME = /[/\\:*?"<>|]/;
-const RESERVED_DESKTOP_EXPORT_FILENAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
 type DesktopIpcHandler = Parameters<typeof ipcMain.handle>[1];
 
@@ -124,114 +115,6 @@ function installDesktopPageGuards(win: BrowserWindow, trustedOrigin: string): vo
     handOffExternalUrl(decision);
     return { action: 'deny' };
   });
-}
-
-async function validatedDirectory(value: unknown): Promise<string | null> {
-  if (typeof value !== 'string' || !isAbsolute(value)) return null;
-  const path = await realpath(value).catch(() => null);
-  if (!path) return null;
-  const info = await stat(path).catch(() => null);
-  return info?.isDirectory() ? path : null;
-}
-
-function validDesktopExportFilename(value: unknown): value is string {
-  if (typeof value !== 'string' || !value || value !== value.trim()
-    || value === '.' || value === '..' || basename(value) !== value) return false;
-  if (new TextEncoder().encode(value).byteLength > 240
-    || INVALID_DESKTOP_EXPORT_FILENAME.test(value)
-    || /[. ]$/.test(value)
-    || RESERVED_DESKTOP_EXPORT_FILENAME.test(value)) return false;
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code <= 31 || code === 127) return false;
-  }
-  return true;
-}
-
-async function readExportDirectoryState(statePath: string): Promise<ExportDirectoryState | null> {
-  try {
-    const info = await stat(statePath);
-    if (!info.isFile() || info.size > MAX_EXPORT_DESTINATION_STATE_BYTES) {
-      throw new Error('invalid export destination state');
-    }
-    const stored = JSON.parse(await readFile(statePath, 'utf8')) as unknown;
-    if (typeof stored !== 'object' || stored === null) throw new Error('invalid export destination');
-    const version = 'version' in stored ? stored.version : undefined;
-    if (version === 1) {
-      const legacyPath = 'path' in stored ? stored.path : undefined;
-      return {
-        currentPath: typeof legacyPath === 'string' ? legacyPath : null,
-        destinations: [],
-      };
-    }
-    const currentDestinationId = 'currentDestinationId' in stored
-      ? stored.currentDestinationId
-      : undefined;
-    const rawDestinations = 'destinations' in stored ? stored.destinations : undefined;
-    if (version !== 2 || typeof currentDestinationId !== 'string'
-      || !Array.isArray(rawDestinations)) {
-      throw new Error('unsupported export destination version');
-    }
-    const destinations = rawDestinations.flatMap((entry): StoredExportDirectory['destinations'] => {
-      if (!entry || typeof entry !== 'object') return [];
-      const destinationId = 'destinationId' in entry ? entry.destinationId : undefined;
-      const path = 'path' in entry ? entry.path : undefined;
-      if (typeof destinationId !== 'string'
-        || !DESKTOP_DESTINATION_ID.test(destinationId)
-        || typeof path !== 'string'
-        || !isAbsolute(path)) return [];
-      return [{ destinationId, path }];
-    }).slice(0, MAX_STORED_EXPORT_DESTINATIONS);
-    const currentPath = destinations.find(
-      (entry) => entry.destinationId === currentDestinationId,
-    )?.path ?? null;
-    return { currentPath, destinations };
-  } catch {
-    return null;
-  }
-}
-
-async function persistExportDirectory(
-  statePath: string,
-  path: string,
-  destinationId: string,
-  previousState?: ExportDirectoryState | null,
-): Promise<void> {
-  if (!DESKTOP_DESTINATION_ID.test(destinationId)) throw new Error('invalid export destination identity');
-  const prior = previousState ?? await readExportDirectoryState(statePath);
-  const destinations = [
-    { destinationId, path },
-    ...(prior?.destinations ?? []).filter((entry) => entry.destinationId !== destinationId),
-  ].slice(0, MAX_STORED_EXPORT_DESTINATIONS);
-  const temporary = `${statePath}.${randomUUID()}.tmp`;
-  const value: StoredExportDirectory = { version: 2, currentDestinationId: destinationId, destinations };
-  await mkdir(dirname(statePath), { recursive: true });
-  try {
-    await writeFile(temporary, JSON.stringify(value), { encoding: 'utf8', mode: 0o600 });
-    await rename(temporary, statePath);
-  } catch (error) {
-    await unlink(temporary).catch(() => undefined);
-    throw error;
-  }
-}
-
-async function restorePersistedExportDirectory(
-  statePath: string,
-): Promise<{ directory: string; state: ExportDirectoryState } | null> {
-  const state = await readExportDirectoryState(statePath);
-  if (!state?.currentPath) return null;
-  const directory = await validatedDirectory(state.currentPath);
-  return directory ? { directory, state } : null;
-}
-
-async function resolvePersistedExportDestination(
-  statePath: string,
-  destinationId: string,
-): Promise<string | null> {
-  if (!DESKTOP_DESTINATION_ID.test(destinationId)) return null;
-  const state = await readExportDirectoryState(statePath);
-  const storedPath = state?.destinations.find((entry) => entry.destinationId === destinationId)?.path;
-  return storedPath ? validatedDirectory(storedPath) : null;
 }
 
 function registerDesktopHandlers(trustedOrigin: string): void {
@@ -317,6 +200,48 @@ function registerDesktopHandlers(trustedOrigin: string): void {
     if (typeof storedName !== 'string') throw new Error('invalid local media name');
     return createTransparentMovProxy(storedName);
   }));
+  let transcriptWindow: BrowserWindow | null = null;
+  const openTranscriptWindow = (payload: TranscriptWindowPayload): void => {
+    if (transcriptWindow && !transcriptWindow.isDestroyed()) {
+      transcriptWindow.webContents.send(TRANSCRIPT_WINDOW_CHANNELS.update, payload);
+      transcriptWindow.show();
+      transcriptWindow.focus();
+      return;
+    }
+    const win = new BrowserWindow({
+      width: 420,
+      height: 560,
+      minWidth: 300,
+      minHeight: 220,
+      backgroundColor: '#16161a',
+      title: '文字稿',
+      show: false,
+      webPreferences: {
+        preload: PRELOAD_PATH,
+        contextIsolation: true,
+        nodeIntegration: false,
+        spellcheck: false,
+        // The editor bridge heartbeat is a timer-driven long poll; without
+        // this, Electron throttles background windows and the MCP bridge
+        // drops offline (connected:false) while the window is minimized.
+        backgroundThrottling: false,
+      },
+    });
+    transcriptWindow = win;
+    win.once('closed', () => {
+      if (transcriptWindow === win) transcriptWindow = null;
+    });
+    installDesktopPageGuards(win, trustedOrigin);
+    void win.loadURL(`${trustedOrigin}/?transcript-window=1`).then(() => {
+      if (win.isDestroyed()) return;
+      win.webContents.send(TRANSCRIPT_WINDOW_CHANNELS.update, payload);
+      win.show();
+    });
+  };
+  ipcMain.handle(TRANSCRIPT_WINDOW_CHANNELS.open, trustedDesktopHandler(trustedOrigin, (_event, value: unknown) => {
+    if (!isTranscriptWindowPayload(value)) throw new Error('invalid transcript window payload');
+    openTranscriptWindow(value);
+  }));
   ipcMain.handle('openchatcut:window-action', trustedDesktopHandler(trustedOrigin, (event, action: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || typeof action !== 'string') return;
@@ -325,7 +250,22 @@ function registerDesktopHandlers(trustedOrigin: string): void {
     else if (action === 'toggle-maximize') {
       if (win.isMaximized()) win.unmaximize();
       else win.maximize();
+    } else if (action === 'apply-ui-scale') {
+      applyResponsiveWindowScale(win);
     }
+  }));
+  // Zoom accelerators (issue #85): step the saved UI scale and re-apply.
+  ipcMain.handle('openchatcut:zoom-step', trustedDesktopHandler(trustedOrigin, async (event, step: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    if (step !== 'reset' && (typeof step !== 'number' || step === 0)) throw new Error('invalid zoom step');
+    const current = parseUserUiScale(getKey('UI_SCALE' as never));
+    const next = step === 'reset'
+      ? 1
+      : Math.min(DESKTOP_UI_SCALE_MAX, Math.max(DESKTOP_UI_SCALE_MIN, Math.round((current + step) * 100) / 100));
+    await setKeys({ UI_SCALE: String(next) });
+    applyResponsiveWindowScale(win);
+    win.webContents.send('openchatcut:ui-scale-changed', next);
   }));
   ipcMain.handle('openchatcut:reveal-export', trustedDesktopHandler(trustedOrigin, async (
     _event,
@@ -374,9 +314,24 @@ async function boot(): Promise<void> {
     }),
   });
   installDirectoryWatchIpc(origin);
+  ipcMain.handle(AGENT_PATH_IMPORT_CHANNEL, trustedDesktopHandler(origin, async (_event, request: unknown) => {
+    const value = request as { paths?: unknown; projectId?: unknown; knownHashes?: unknown };
+    const paths = Array.isArray(value?.paths)
+      ? value.paths.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0 && entry.length < 4096)
+      : [];
+    const knownHashes = Array.isArray(value?.knownHashes)
+      ? value.knownHashes.filter((entry): entry is string => typeof entry === 'string' && entry.length <= 128)
+      : [];
+    if (!paths.length || typeof value?.projectId !== 'string') {
+      throw new Error('invalid agent path import request');
+    }
+    return importAgentPaths({ paths, projectId: value.projectId, knownHashes });
+  }));
+  const hardware = await detectDesktopHardwareProfile(app);
   const desktopInference = installDesktopInferenceIpc(
     origin,
     join(app.getPath('home'), '.openchatcut', 'asr-models'),
+    hardware,
   );
   const parakeet = installParakeetIpc(origin);
   app.once('before-quit', () => {
@@ -397,6 +352,8 @@ async function boot(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
+      // Same heartbeat reasoning as the transcript window above.
+      backgroundThrottling: false,
     },
   });
   applyDesktopWindowFrame(win);

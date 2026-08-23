@@ -152,6 +152,15 @@ function minimaxMusic(args: GenerateArgs): SubmitMusicArgs {
   };
 }
 
+function atlasMusic(args: GenerateArgs): SubmitMusicArgs {
+  return {
+    ...musicBase(args, 'atlas', 't2m'),
+    isInstrumental: bool(args.isInstrumental),
+    sampleRate: num(args.sampleRate),
+    bitrate: num(args.bitrate),
+  };
+}
+
 function murekaMusic(args: GenerateArgs): SubmitMusicArgs {
   const allowed = new Set<MusicMode>(['instrumental', 'song', 'prompt-song', 'soundtrack', 'track']);
   const mode = allowed.has(args.mode as MusicMode) ? args.mode as MusicMode : 'instrumental';
@@ -167,9 +176,18 @@ function murekaMusic(args: GenerateArgs): SubmitMusicArgs {
   };
 }
 
-const MUSIC_STRATEGIES = { mureka: murekaMusic, minimax: minimaxMusic } as const;
+// Sonilo v2m is video-conditioned: the project video asset (the rendered cut)
+// is the input; prompt is a single optional style hint. Everything else is
+// provider-specific elsewhere and dropped here.
+const soniloMusic = (args: GenerateArgs): SubmitMusicArgs => ({
+  provider: 'sonilo', mode: 'v2m', prompt: str(args.prompt), name: str(args.name),
+  sourceAssetId: str(args.sourceAssetId),
+});
+
+const MUSIC_STRATEGIES = { mureka: murekaMusic, minimax: minimaxMusic, atlas: atlasMusic, sonilo: soniloMusic } as const;
 export function buildSubmitMusicArgs(args: GenerateArgs): SubmitMusicArgs {
-  return MUSIC_STRATEGIES[args.provider === 'minimax' ? 'minimax' : 'mureka'](args);
+  const provider = args.provider === 'minimax' || args.provider === 'atlas' || args.provider === 'sonilo' ? args.provider : 'mureka';
+  return MUSIC_STRATEGIES[provider](args);
 }
 
 const videoBase = (args: GenerateArgs, model: SubmitVideoArgs['model']): SubmitVideoArgs => ({
@@ -204,7 +222,15 @@ export function buildSubmitVideoArgs(args: GenerateArgs): SubmitVideoArgs {
   return VIDEO_STRATEGIES[model](args);
 }
 
-export const buildSubmitSoundArgs = (args: GenerateArgs): SubmitSoundArgs => ({
-  prompt: String(args.prompt ?? ''), durationSeconds: num(args.durationSeconds), promptInfluence: num(args.promptInfluence),
-  loop: bool(args.loop), outputFormat: str(args.outputFormat), name: str(args.name),
-});
+export const buildSubmitSoundArgs = (args: GenerateArgs): SubmitSoundArgs => {
+  // Sonilo SFX come from the video itself; ElevenLabs synthesis controls
+  // (and the prompt) do not apply and are dropped.
+  if (args.provider === 'sonilo') {
+    return { provider: 'sonilo', sourceAssetId: str(args.sourceAssetId), name: str(args.name) };
+  }
+  return {
+    provider: 'elevenlabs',
+    prompt: String(args.prompt ?? ''), durationSeconds: num(args.durationSeconds), promptInfluence: num(args.promptInfluence),
+    loop: bool(args.loop), outputFormat: str(args.outputFormat), name: str(args.name),
+  };
+};

@@ -53,6 +53,9 @@ const llmPage = (preset: (typeof LLM_PROVIDER_PRESETS)[number]): SettingsVendorP
     note: preset.id === 'anthropic'
       ? '内置 Agent 需要 Anthropic API Key。Claude Code 订阅用户请通过「外部 Agent 接入 (MCP)」连接；OpenChatCut 不接收 Claude OAuth。'
       : '每个厂商独立保存地址、密钥与模型。先测试连接，成功后可从接口返回的模型中选择。',
+    ...(preset.id === 'anthropic'
+      ? { noteAction: { label: '外部 Agent 接入 (MCP)', action: 'open-mcp-guide' } }
+      : {}),
     fields: [
       {
         name: names.baseUrl,
@@ -230,10 +233,12 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
           byteplusPage('video', modelText('BYTEPLUS_VIDEO_MODEL', '视频模型', 'seedance-1-5-pro-251215',
             '测试连接后可直接选择接口返回的模型，也可以手动填写模型 ID。', true), 'BytePlus · Seedance'),
         ] },
-      { key: 'music', title: '生音乐', hint: 'submit_music · 文字生成配乐，任一厂商即可。',
+      { key: 'music', title: '生音乐', hint: 'submit_music · 文字 / 成片生成配乐，任一厂商即可。',
         route: routeSelect('PREFERRED_MUSIC_VENDOR', [
           { value: 'mureka', label: 'Mureka' },
           { value: 'minimax', label: 'MiniMax' },
+          { value: 'atlas', label: 'Atlas Cloud' },
+          { value: 'sonilo', label: 'Sonilo' },
         ]),
         vendors: [
           { key: 'music/mureka', vendor: 'mureka', title: 'Mureka', fields: [
@@ -243,6 +248,19 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
           ] },
           minimaxPage('music', modelSelect('MINIMAX_MUSIC_MODEL', '音乐模型', 'music-2.6',
             ['music-3.0', 'music-2.6', 'music-3.0-free', 'music-2.6-free', 'music-cover', 'music-cover-free'])),
+          { key: 'music/atlas', vendor: 'atlas', title: 'Atlas Cloud', fields: [
+            secret('ATLASCLOUD_API_KEY', 'API Key'),
+            text('ATLASCLOUD_API_BASE', 'Base URL', '默认 https://api.atlascloud.ai/api/v1'),
+            modelSelect('ATLASCLOUD_MUSIC_MODEL', '音乐模型', 'minimax/music-2.6', ['minimax/music-2.6']),
+          ] },
+          { key: 'music/sonilo', vendor: 'sonilo', title: 'Sonilo',
+            note: '按成片生成：把渲染好的视频交给 Sonilo，配乐跟着画面节奏走（可选一句风格提示，不填也行）。'
+              + '配乐自带授权、可商用（以条款为准）；每条音轨附 license_id 留档。'
+              + '同一个 Key 也用于按成片生成音效（submit_sound，免版税）。',
+            fields: [
+              secret('SONILO_API_KEY', 'API Key'),
+              text('SONILO_BASE_URL', 'Base URL', '默认 https://api.sonilo.com'),
+            ] },
         ] },
     ],
   },
@@ -314,6 +332,27 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
         vendors: [
           { key: 'web/firecrawl', vendor: 'firecrawl', title: 'Firecrawl',
             fields: [secret('FIRECRAWL_API_KEY', 'API Key')] },
+        ] },
+    ],
+  },
+  {
+    key: 'interface', title: '界面', icon: 'layoutPanel',
+    groups: [
+      { key: 'display', title: '显示', hint: '界面缩放与显示相关设置。',
+        vendors: [
+          { key: 'display/scale', vendor: 'localasr', title: '界面缩放',
+            note: '调整整个编辑器的缩放比例（80%–150%）。桌面版保存后立即生效，也可用 Ctrl/Cmd + +/- 快速调整、Ctrl/Cmd + 0 复位。浏览器版请使用浏览器自带缩放。',
+            fields: [
+              { name: 'UI_SCALE', label: '界面缩放', kind: 'select', defaultLabel: '100%',
+                options: [
+                  { value: '0.8', label: '80%' },
+                  { value: '0.9', label: '90%' },
+                  { value: '1', label: '100%' },
+                  { value: '1.1', label: '110%' },
+                  { value: '1.25', label: '125%' },
+                  { value: '1.5', label: '150%' },
+                ] },
+            ] },
         ] },
     ],
   },

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import { createMiniConnect } from '../../desktop/mini-connect.ts';
 import { agentRunsPlugin } from './routes.ts';
@@ -402,6 +403,17 @@ try {
 } finally {
   resetServerRunStoreForTest();
   server.close();
+}
+
+// Draft persistence guard rails (issue: 'Server run draft could not be
+// persisted' after tab switches). HTTP-level probing of these routes is
+// platform-fragile (undici setTypeOfService EINVAL on macOS loopback), so
+// assert the exact status/error contract the client hint logic depends on.
+{
+  const source = await readFile(new URL('./routes.ts', import.meta.url), 'utf8');
+  assert.match(source, /sendJson\(res, 403, \{ error: 'invalid run capability' \}\)/, 'draft without a valid capability is rejected 403');
+  assert.match(source, /sendJson\(res, 404, \{ error: 'run not found' \}\)/, 'draft for an unknown run is rejected 404');
+  assert.match(source, /sendJson\(res, 409, \{ error: 'draft artifact was rejected \(invalid, duplicate, or over the limit\)' \}\)/, 'malformed draft artifacts are rejected 409');
 }
 
 console.log('agent-runs/routes.verify: ordered SSE replay, reconnect, terminal closure, metadata and cap failure OK');

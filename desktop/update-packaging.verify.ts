@@ -17,7 +17,7 @@ interface BuilderConfig {
 async function configFor(target: string): Promise<BuilderConfig> {
   // Query isolation is intentional: the config reads CC_EB_TARGET once at module evaluation.
   process.env.CC_EB_TARGET = target;
-  const moduleUrl = new URL(`../electron-builder.config.mjs?target=${target}`, import.meta.url);
+  const moduleUrl = new URL(`../config/electron-builder.config.mjs?target=${target}`, import.meta.url);
   const loaded = await import(moduleUrl.href) as { default: BuilderConfig };
   return loaded.default;
 }
@@ -53,14 +53,20 @@ assert.equal(
 );
 
 const linux = await configFor('linux-x64');
+for (const worker of ['asr', 'semantic', 'clap', 'rhythm']) {
+  assert.ok(
+    linux.files?.includes(`desktop-dist/native-${worker}-worker.mjs`),
+    `Linux packages must ship the native ${worker} worker`,
+  );
+}
 assert.equal(
-  linux.files?.includes('desktop-dist/native-asr-worker.mjs'),
+  linux.files?.includes('!node_modules/onnxruntime-node/bin/napi-v6/linux/x64/**'),
   false,
-  'unsupported Linux packages must not ship native inference workers',
+  'Linux packages must retain the target ONNX Runtime binary',
 );
 assert.ok(
-  linux.files?.includes('!node_modules/onnxruntime-node/**'),
-  'unsupported Linux packages must exclude ONNX Runtime entirely',
+  linux.files?.includes('!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/**'),
+  'Linux packages must exclude foreign ONNX Runtime binaries',
 );
 assert.equal(
   linux.files?.includes('!node_modules/sqlite-vec-linux-x64/**'),
@@ -79,6 +85,13 @@ for (const foreignPackage of [
   );
 }
 
+const linuxArm64 = await configFor('linux-arm64');
+assert.equal(
+  linuxArm64.files?.includes('!node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**'),
+  false,
+  'Linux arm64 packages must retain the arm64 ONNX Runtime binary',
+);
+
 const windows = await configFor('win32-x64');
 assert.equal(
   windows.files?.includes('!node_modules/sqlite-vec-windows-x64/**'),
@@ -92,7 +105,13 @@ assert.ok(
 
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
   scripts: Record<string, string>;
+  devDependencies: Record<string, string>;
 };
+assert.equal(
+  packageJson.devDependencies['electron-builder'],
+  '26.15.7',
+  'Windows NSIS packaging must retain the BCJ extraction fix shipped in electron-builder 26.15.6+',
+);
 assert.match(
   packageJson.scripts['desktop:build:main'],
   /native-rhythm-worker\.ts.*native-rhythm-worker\.mjs/,
@@ -116,6 +135,21 @@ assert.doesNotMatch(
   windowsDistScript,
   /&& electron-builder /,
   'Windows packaging must not invoke electron-builder with host-derived filters',
+);
+assert.match(
+  windowsDistScript,
+  /'--config','config\/electron-builder\.config\.mjs'/,
+  'Windows packaging must pass the categorized electron-builder config path',
+);
+assert.match(
+  packageJson.scripts['desktop:dist'],
+  /--config config\/electron-builder\.config\.mjs/,
+  'macOS packaging must pass the categorized electron-builder config path',
+);
+assert.match(
+  packageJson.scripts['desktop:dist:linux'],
+  /--config config\/electron-builder\.config\.mjs/,
+  'Linux packaging must pass the categorized electron-builder config path',
 );
 
 const workflow = await readFile(new URL('../.github/workflows/desktop.yml', import.meta.url), 'utf8');

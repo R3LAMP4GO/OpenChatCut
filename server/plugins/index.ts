@@ -1,6 +1,6 @@
 // Server-side plugin assembly (single source of truth): native shared storage + key-gated connect middleware and respective keystores
-// Getter configuration, extracted from vite.config.ts as is. The two hosts share the same assembly and ensure the same API:
-// - vite.config.ts → dev server(vite mount)
+// Getter configuration, extracted from config/vite.config.ts as is. The two hosts share the same assembly and ensure the same API:
+// - config/vite.config.ts → dev server(vite mount)
 // - desktop/embedded-server.ts → Electron production shell (stub mounting)
 // Getter reads keystore immediately - the next request will take effect after the setting panel is saved, no need to restart.
 import type { Plugin } from "vite";
@@ -211,6 +211,12 @@ export function serverPlugins(options: { projectStoreHttp?: boolean } = {}): Plu
       get model() {
         return getKey("ELEVENLABS_SOUND_MODEL") || "eleven_text_to_sound_v2";
       },
+      get soniloBaseUrl() {
+        return getKey("SONILO_BASE_URL") || "https://api.sonilo.com";
+      },
+      get soniloApiKey() {
+        return getKey("SONILO_API_KEY");
+      },
     }),
     musicGenerationPlugin({
       get baseUrl() {
@@ -230,6 +236,21 @@ export function serverPlugins(options: { projectStoreHttp?: boolean } = {}): Plu
       },
       get minimaxModel() {
         return getKey("MINIMAX_MUSIC_MODEL") || "music-2.6";
+      },
+      get atlasBaseUrl() {
+        return getKey("ATLASCLOUD_API_BASE") || "https://api.atlascloud.ai/api/v1";
+      },
+      get atlasApiKey() {
+        return getKey("ATLASCLOUD_API_KEY");
+      },
+      get atlasModel() {
+        return getKey("ATLASCLOUD_MUSIC_MODEL") || "minimax/music-2.6";
+      },
+      get soniloBaseUrl() {
+        return getKey("SONILO_BASE_URL") || "https://api.sonilo.com";
+      },
+      get soniloApiKey() {
+        return getKey("SONILO_API_KEY");
       },
     }),
     videoGenerationPlugin({

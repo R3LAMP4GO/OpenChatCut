@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { ProjectMeta } from '../../persist/projectStoreCoordinators';
 import { theme } from '../../theme';
 import { useT } from '../../i18n/locale';
@@ -6,6 +7,7 @@ import { ShortcutsDialog } from '../../shortcuts/ShortcutsDialog';
 import { DashboardHeaderLinks } from '../DashboardHeaderLinks';
 import { BrandMark, Icon, OpenChatCutWordmark } from '../icons';
 import { McpGuideDialog } from '../settings/McpGuide';
+import { bindAction } from '../../shortcuts/actionRegistry';
 import { SettingsDialog } from '../settings/SettingsDialog';
 import { StorageMigrationDialog } from '../settings/StorageMigrationDialog';
 import { StorageMigrationBanner } from '../settings/StorageMigrationBanner';
@@ -123,7 +125,7 @@ function ProjectActions({ project, props, model }: { project: ProjectMeta; props
         model.rename.setConfirmId(null);
       }}
       disabled={model.transfer.busy}
-      style={{ ...miniBtn, color: '#f77' }}
+      style={{ ...miniBtn, color: theme.danger }}
       title={t('彻底删除工程,并清掉只有它引用的素材文件')}
     >{t('确认删除')}</button>;
   }
@@ -189,6 +191,11 @@ export function DashboardContent({ props, model }: { props: DashboardProps; mode
 }
 
 export function DashboardDialogs({ model }: { model: DashboardModel }) {
+  // The settings dialog's Anthropic pane summons the MCP guide through the
+  // action registry; in the editor the top bar answers, here the dashboard's
+  // own dialog state does. Without this the button silently does nothing on
+  // the projects page, which is exactly where a new user starts.
+  useEffect(() => bindAction('open-mcp-guide', () => model.setDialog('mcp', true)), [model]);
   return (
     <>
       {model.dialogs.settings && <SettingsDialog onClose={() => model.setDialog('settings', false)} />}

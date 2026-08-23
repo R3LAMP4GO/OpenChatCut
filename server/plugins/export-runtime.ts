@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process';
 import { readdir, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ffmpegBin } from '../media-binaries.ts';
+import { ffmpegThreadArgs, spawnMediaProcess } from '../media-process.ts';
 import { isSafeUploadName } from '../media-dir.ts';
 import {
   h264EncoderAttempts,
@@ -12,7 +12,6 @@ import {
   h264GlobalArgs,
   shouldFallbackH264Encoder,
   resolveH264Encoder,
-  resolveHwDecodeArgs,
   type H264Encoder,
   type H264EncoderOutcome,
 } from '../media-acceleration.ts';
@@ -184,7 +183,7 @@ export async function withExportPermit<T>(
 
 function runFfmpeg(args: string[], signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(ffmpegBin(), args, { stdio: ['ignore', 'ignore', 'pipe'], signal });
+    const child = spawnMediaProcess(ffmpegBin(), [...ffmpegThreadArgs(), ...args], { stdio: ['ignore', 'ignore', 'pipe'], signal });
     let stderr = '';
     let settled = false;
     let timeoutError: Error | undefined;
@@ -214,7 +213,9 @@ export function retimeVideoEncodingArgs(
   encoder: H264Encoder,
   targetBitrate: number,
 ): string[] {
-  if (codec === 'vp8') return ['-c:v', 'libvpx', '-b:v', String(targetBitrate)];
+  if (codec === 'vp8') {
+    return ['-c:v', 'libvpx', ...ffmpegThreadArgs(), '-b:v', String(targetBitrate)];
+  }
   return h264EncodingArgs({ encoder, targetBitrate, softwarePreset: 'medium' });
 }
 
@@ -257,14 +258,12 @@ async function retimeH264(
   signal?: AbortSignal,
 ): Promise<H264EncoderOutcome> {
   const preferred = await resolveH264Encoder(ffmpegBin());
-  const hwDecode = await resolveHwDecodeArgs(ffmpegBin(), preferred);
   let fallbackReason: string | undefined;
   let lastError: unknown;
   for (const encoder of h264EncoderAttempts(preferred)) {
     try {
       const args = [
         ...base,
-        ...hwDecode,
         ...h264GlobalArgs(encoder),
         '-i', input,
         '-vf', h264FilterChain(encoder, [`fps=${targetFps}`]),

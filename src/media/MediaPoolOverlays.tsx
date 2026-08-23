@@ -26,6 +26,10 @@ interface AssetMenuPortalProps {
   onMove: (folderId?: string) => void;
   onAddTimeline: () => void;
   onAddChat: () => void;
+  /** Transcribe the menu's asset selection (enabled when any is transcribable). */
+  onTranscribe?: () => void;
+  /** Open the transcript viewer for the menu's anchor asset. */
+  onViewTranscript?: () => void;
 }
 
 interface BlankMediaMenuActionsProps {
@@ -179,6 +183,8 @@ function AssetMenuActions(props: AssetMenuPortalProps & { asset: MediaAsset }) {
   return (
     <>
       {!props.missing && <AssetExportButton asset={asset} fps={props.fps} onError={props.onError} onComplete={props.onClose} />}
+      {props.onTranscribe && <button type="button" onClick={props.onTranscribe}>{asset.transcribeStatus === 'failed' ? t('重新转写') : t('转写')}</button>}
+      {props.onViewTranscript && <button type="button" onClick={props.onViewTranscript}>{t('查看文字稿')}</button>}
       <button type="button" onClick={props.onFavorite}>{asset.favorite ? t('取消收藏') : t('收藏')}</button>
       <button type="button" onClick={props.onRename}>{t('重命名')}</button>
       {props.canRelink && asset.kind !== 'motion-graphic' && <button type="button" onClick={props.onRelink}>{t('重新链接文件')}</button>}

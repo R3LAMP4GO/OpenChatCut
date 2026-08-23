@@ -12,8 +12,10 @@ import {
   type RegisterGenerationProviderTask,
 } from './generation-jobs.ts';
 import { saveAudioResponse } from './music-media.ts';
+import { generateAtlasMusic } from './music-atlas.ts';
 import { generateMureka, pickMurekaAudioUrl } from './music-mureka.ts';
 import { isMinimaxCoverModel, minimaxMusicUrl } from './music-minimax.ts';
+import { generateSoniloMusic, soniloMusicResult } from './music-sonilo.ts';
 import type { MusicOptions, MusicRequest, ValidMusicRequest } from './music-types.ts';
 import { validateMusicRequest } from './music-validation.ts';
 import { fetchGeneratedResult } from './result-download.ts';
@@ -42,7 +44,7 @@ export function expectedMusicResultCount(input: Pick<ValidMusicRequest, 'provide
   return input.provider === 'mureka' ? input.count : 1;
 }
 
-async function minimaxResult(jobId: string, input: ValidMusicRequest, url: string): Promise<GenerationResult> {
+async function singleMusicResult(jobId: string, input: ValidMusicRequest, url: string): Promise<GenerationResult> {
   const response = await fetchGeneratedResult(url, 'audio');
   const saved = await saveAudioResponse(response, input.audioFormat, input.sampleRate);
   return { assetId: jobId, kind: 'audio', name: input.name, ...saved };
@@ -72,27 +74,51 @@ async function runMusicOperation(
   const expectedResultCount = expectedMusicResultCount(input);
   const checkpoint = generationResultCheckpoint(storedResultUrls, expectedResultCount, providerTaskId);
   let urls = checkpoint.urls;
+  // Sonilo license ids ride alongside the single result URL; a resume from a
+  // stored URL checkpoint recovers the audio, the sidecar stays best-effort.
+  let soniloLicenseIds: (string | undefined)[] = [];
   if (!checkpoint.complete) {
-    const providerUrls = input.provider === 'minimax'
-      ? [await minimaxMusicUrl(options, input)]
-      : await generateMureka(
+    let providerUrls: string[];
+    if (input.provider === 'minimax') {
+      providerUrls = [await minimaxMusicUrl(options, input)];
+    } else if (input.provider === 'atlas') {
+      providerUrls = await generateAtlasMusic(
+        options,
+        input,
+        (taskId) => registerProviderTask('atlas', taskId),
+        providerTaskId,
+      );
+    } else if (input.provider === 'sonilo') {
+      const tracks = await generateSoniloMusic(
+        options,
+        input,
+        (taskId) => registerProviderTask('sonilo', taskId),
+        providerTaskId,
+      );
+      providerUrls = tracks.map((track) => track.url);
+      soniloLicenseIds = tracks.map((track) => track.licenseId);
+    } else {
+      providerUrls = await generateMureka(
         options,
         input,
         (taskId) => registerProviderTask('mureka', taskId),
         providerTaskId,
       );
+    }
     urls = requireGenerationResultUrls(providerUrls, expectedResultCount);
   }
   urls = requireGenerationResultUrls(urls, expectedResultCount);
-  const download = () => input.provider === 'minimax'
-    ? minimaxResult(operationId, input, urls[0])
-    : murekaResults(operationId, input, urls);
+  const download = () => input.provider === 'mureka'
+    ? murekaResults(operationId, input, urls)
+    : input.provider === 'sonilo'
+      ? soniloMusicResult(operationId, input, urls[0], soniloLicenseIds[0])
+      : singleMusicResult(operationId, input, urls[0]);
   for (const [index, url] of urls.entries()) await registerDownload(url, download, index);
   return download();
 }
 
 export function musicGenerationPlugin(options: MusicOptions): Plugin {
-  for (const provider of ['mureka', 'minimax'] as const) {
+  for (const provider of ['mureka', 'minimax', 'atlas', 'sonilo'] as const) {
     registerGenerationJobResumer('submit_music', provider, async (
       snapshot: GenerationJobSnapshot,
       _update,
@@ -122,7 +148,17 @@ export function musicGenerationPlugin(options: MusicOptions): Plugin {
           if (input.provider === 'mureka' && !options.apiKey) {
             throw new Error('Mureka is not configured. Set MUREKA_API_KEY in .env.local or 设置面板.');
           }
-          const model = input.provider === 'minimax' ? options.minimaxModel : options.model;
+          if (input.provider === 'atlas' && !options.atlasApiKey) {
+            throw new Error('Atlas Cloud is not configured. Set ATLASCLOUD_API_KEY in .env.local or 设置面板.');
+          }
+          if (input.provider === 'sonilo' && !options.soniloApiKey) {
+            throw new Error('Sonilo is not configured. Set SONILO_API_KEY in .env.local or 设置面板.');
+          }
+          // Sonilo has no client-selected model: /v1 routes to the latest server-side.
+          const model = input.provider === 'minimax' ? options.minimaxModel
+            : input.provider === 'atlas' ? options.atlasModel
+              : input.provider === 'sonilo' ? 'v1'
+                : options.model;
           const submitArgs = Object.fromEntries(Object.entries(raw).filter(([key]) => key !== 'operationId'));
           const submission = await createGenerationJob(
             { kind: 'music', model, ...input },

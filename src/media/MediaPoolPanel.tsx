@@ -22,6 +22,8 @@ import { MediaPoolGrid, type MediaGridEntry } from './MediaPoolGrid';
 import { useAssetMenu, type AssetMenuPosition } from './useAssetMenu';
 import { assetMenuSelectionIds, batchAssetRename } from './assetMenuSelection';
 import { MediaPoolMenus } from './MediaPoolMenus';
+import { PoolTranscriptViewer } from './TranscriptViewerDialog';
+import { useTranscriptViewer } from './useTranscriptViewer';
 import { toggleMediaView } from './mediaView';
 import { resolveMediaPoolShortcut } from './mediaPoolShortcutScope';
 import { useMediaPoolFileImport } from './useMediaPoolFileImport';
@@ -65,12 +67,14 @@ interface MediaPoolPanelProps {
   onRelinkAsset?: (id: string, next: MediaAssetRelinkPatch) => void;
   /** Add a solid-color clip. */
   onAddSolid?: () => void;
+  /** Start (or retry) ASR for one asset from the pool UI. */
+  onTranscribe: (asset: MediaAsset) => void;
 }
 
 export function MediaPoolPanel({
   semanticScopeId, assets, folders, fps, usedAssetIds, offlineAssetIds, onAssetLoadError,
   onImport, onImportMobile, directoryImport, directoryImportError, onAddAsset, onAddAssetsToTimeline, onAddAssetsToChat, onCreateFolder, onRenameFolder,
-  onDeleteFolder, onMoveAssets, onRenameAsset, onRenameAssets, onSetFavorite, onSetAssetsFavorite, onRemoveAsset, onRemoveAssets, onPasteAssets, onRelinkAsset, onAddSolid,
+  onDeleteFolder, onMoveAssets, onRenameAsset, onRenameAssets, onSetFavorite, onSetAssetsFavorite, onRemoveAsset, onRemoveAssets, onPasteAssets, onRelinkAsset, onAddSolid, onTranscribe,
 }: MediaPoolPanelProps) {
   const t = useT();
   const musicAnalysis = useMusicAnalysisCards(assets);
@@ -95,7 +99,7 @@ export function MediaPoolPanel({
   } = useAssetMenu();
   const [folderMenuId, setFolderMenuId] = useState<string | null>(null);
   const [folderMenuPos, setFolderMenuPos] = useState<AssetMenuPosition | null>(null);
-  // Two-step confirmation for deletion: Click "Confirm Delete" for the first time, and the menu will be reset when reopening
+  // Two-step deletion: first click asks for confirmation, reopening the menu resets it
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string>();
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -108,6 +112,7 @@ export function MediaPoolPanel({
   const [semanticResults, setSemanticResults] = useState<SemanticMatch[] | null>(null);
   const [semanticOpenRequest, setSemanticOpenRequest] = useState(0);
   const [mobileUploadOpen, setMobileUploadOpen] = useState(false);
+  const { transcriptEntries, viewerAsset, openTranscriptViewer, closeTranscriptViewer, stepViewer } = useTranscriptViewer(assets);
   const relink = useMediaPoolRelink({
     assets,
     offlineAssetIds,
@@ -128,15 +133,12 @@ export function MediaPoolPanel({
   useEffect(() => {
     if (!assetMenu) setConfirmDeleteId(null);
   }, [assetMenu]);
-
-
   const currentFolder = folders.find((folder) => folder.id === currentFolderId);
   const childFolders = folders.filter((folder) => folder.parentId === currentFolderId);
   const { query: q, visible } = filterMediaAssets({
     assets, query, semanticResults, currentFolderId, type, favoritesOnly, sort,
   });
   const selectedAssets = assets.filter((asset) => selected.has(asset.id));
-
   const openPrompt = (next: MediaPromptState) => { setPromptValue(next.initialValue); setPromptState(next); };
   const closePrompt = () => {
     setPromptState(null);
@@ -196,7 +198,6 @@ export function MediaPoolPanel({
   ) => {
     closeAssetMenu();
     setBlankMenuPos(null);
-    // Reuse asset-menu geometry: clamp within the media-pool panel.
     const rect = anchor.getBoundingClientRect();
     const panel = anchor.closest('.cc-media-pool')?.getBoundingClientRect();
     const menuWidth = 152;
@@ -285,7 +286,6 @@ export function MediaPoolPanel({
   const gridEntries = useMemo<MediaGridEntry[]>(() => [
     ...(showFolders && !currentFolderId && onAddSolid ? [{ kind: 'solid' as const }] : []),
     ...(showFolders && !currentFolderId ? [{ kind: 'favorites' as const }] : []),
-    // Inside a subfolder: first tile is "上一层" so assets can be dragged back up.
     ...(showFolders && currentFolder ? [{
       kind: 'parent' as const,
       parentId: currentFolder.parentId,
@@ -422,6 +422,11 @@ export function MediaPoolPanel({
         onToggleSelected={toggleSelected}
         onSetSelected={(ids) => setSelected(new Set(ids))}
         onSetFavorite={onSetFavorite}
+        onTranscribe={(id) => {
+          const target = assets.find((asset) => asset.id === id);
+          if (target) onTranscribe(target);
+        }}
+        onOpenTranscript={openTranscriptViewer}
       />
 
       <MediaPoolMenus
@@ -440,6 +445,8 @@ export function MediaPoolPanel({
           close: closeAssetMenu, setError, onSetFavorite, onSetAssetsFavorite,
           rename: renameAssets, rememberFocus: modalFocus.remember, startRelink,
           requestRemove: requestRemoveAssets, setConfirmDeleteId, remove: removeAssets,
+          transcribe: (targets) => targets.filter((asset) => (asset.kind === 'audio' || asset.kind === 'video') && asset.transcribeStatus !== 'running' && asset.transcribeStatus !== 'done').forEach((asset) => onTranscribe(asset)),
+          viewTranscript: (asset) => openTranscriptViewer(asset.id),
           move: onMoveAssets, addToTimeline: onAddAssetsToTimeline, addAsset: onAddAsset,
           addToChat: onAddAssetsToChat,
         }}
@@ -453,6 +460,8 @@ export function MediaPoolPanel({
           setView, setSort, setType,
         }}
       />
+
+      <PoolTranscriptViewer asset={viewerAsset} entries={transcriptEntries} onClose={closeTranscriptViewer} onStep={stepViewer} />
 
       <MediaPoolDialogs
         prompt={promptState}

@@ -1,23 +1,14 @@
-import { spawn } from 'node:child_process';
 import { copyFile, mkdir, realpath, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Stats } from 'node:fs';
-import type {
-  DirectoryImportedFile,
-  DirectoryImportMediaKind,
-} from '../shared/directory-import.ts';
+import type { DirectoryImportedFile, DirectoryImportMediaKind } from '../shared/directory-import.ts';
 import { normalizeSha256Hash } from '../shared/content-hash.ts';
 import { sha256File } from '../shared/node-content-hash.ts';
 import { ffprobeBin } from '../server/media-binaries.ts';
+import { spawnMediaProcess } from '../server/media-process.ts';
 import { uploadDir } from '../server/media-dir.ts';
-import {
-  normalizeMediaFile,
-  type NormalizeMediaFileResult,
-} from '../server/media-normalization-runner.ts';
-import {
-  normalizationAbortError,
-  throwIfNormalizationAborted,
-} from '../server/media-normalization.ts';
+import { normalizeMediaFile, type NormalizeMediaFileResult } from '../server/media-normalization-runner.ts';
+import { normalizationAbortError, throwIfNormalizationAborted } from '../server/media-normalization.ts';
 import {
   createTransparentMovProxy,
   importLocalMedia,
@@ -265,7 +256,7 @@ function parseRational(value: unknown): number | undefined {
 function runProbeProcess(args: readonly string[], signal?: AbortSignal): Promise<string> {
   throwIfNormalizationAborted(signal);
   const deferred = Promise.withResolvers<string>();
-  const child = spawn(ffprobeBin(), [...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawnMediaProcess(ffprobeBin(), [...args], { stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   let terminalError: Error | undefined;
@@ -313,8 +304,12 @@ export async function probeDirectoryMedia(
   const stream = output.streams?.find((candidate) => candidate.codec_type === streamType);
   if (!stream) throw new Error(`ffprobe found no ${streamType} stream`);
   const duration = Number(output.format?.duration ?? stream.duration);
-  const width = Number(stream.width);
-  const height = Number(stream.height);
+  const codedWidth = Number(stream.width);
+  const codedHeight = Number(stream.height);
+  const rotation = rotationOfStream(stream);
+  const swapped = rotation === 90 || rotation === 270;
+  const width = swapped ? codedHeight : codedWidth;
+  const height = swapped ? codedWidth : codedHeight;
   return {
     ...(Number.isFinite(duration) && duration > 0 ? { durationSeconds: duration } : {}),
     ...(Number.isFinite(width) && width > 0 ? { width } : {}),
@@ -323,6 +318,19 @@ export async function probeDirectoryMedia(
       ? { sourceFps: parseRational(stream.avg_frame_rate) ?? parseRational(stream.r_frame_rate) }
       : {}),
   };
+}
+
+/** Rotation from stream tags (rotate) or side-data (display matrix). */
+function rotationOfStream(stream: Record<string, unknown>): number {
+  const tags = stream.tags as Record<string, unknown> | undefined;
+  const tag = Number(tags?.rotate);
+  if (Number.isFinite(tag) && tag !== 0) return ((tag % 360) + 360) % 360;
+  const sideData = stream.side_data_list as Array<Record<string, unknown>> | undefined;
+  for (const entry of sideData ?? []) {
+    const rotation = Number(entry.rotation);
+    if (Number.isFinite(rotation) && rotation !== 0) return ((rotation % 360) + 360) % 360;
+  }
+  return 0;
 }
 
 interface ResolvedDirectoryPublication {

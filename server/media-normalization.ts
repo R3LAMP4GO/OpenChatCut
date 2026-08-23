@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { realpath, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import {
   h264EncoderAttempts,
+  h264EncoderFallbackReason,
   h264EncodingArgs,
   isHardwareH264Encoder,
   probeEncoderQualityMode,
@@ -16,6 +16,7 @@ import {
   normalizationAbortError,
   throwIfNormalizationAborted,
 } from './media-normalization-admission.ts';
+import { ffmpegThreadArgs, spawnMediaProcess } from './media-process.ts';
 export {
   createNormalizeAdmission,
   normalizationAbortError,
@@ -35,6 +36,9 @@ const TARGET_FLOOR_BITRATE_BPS = 1_500_000;
 const REFERENCE_PIXELS = 1920 * 1080;
 const VIDEO_AUDIO_BITRATE = '160k';
 const FFMPEG_TIMEOUT_MS = 60 * 60_000; // long masters
+// Soft cap for optional optimization only; compatibility fixes such as VFR to
+// CFR conversion still run for large sources.
+const LARGE_SOURCE_BYTES = 1.5 * 1024 * 1024 * 1024;
 
 
 export function createNormalizeTempPath(
@@ -86,7 +90,7 @@ function run(
 ): Promise<{ stdout: string; stderr: string }> {
   throwIfNormalizationAborted(signal);
   const deferred = Promise.withResolvers<{ stdout: string; stderr: string }>();
-  const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawnMediaProcess(cmd, [...ffmpegThreadArgs(), ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   let settled = false;
@@ -180,14 +184,37 @@ export function playableDurationSeconds(meta: Pick<ProbeMeta, 'duration' | 'fram
   }
   return meta.duration;
 }
+/** Displayed dimensions for a rotation-coded stream. ±90/270 swap the
+ * coded width/height; 0/180 keep them. */
+export function displayDimensions(codedWidth: number, codedHeight: number, rotation: number): { width: number; height: number } {
+  const swapped = rotation === 90 || rotation === 270;
+  return swapped
+    ? { width: codedHeight, height: codedWidth }
+    : { width: codedWidth, height: codedHeight };
+}
+
+
+export function rotationOf(video: Record<string, unknown>): number {
+  const raw = Number(video.rotation);
+  if (Number.isFinite(raw) && raw !== 0) return ((raw % 360) + 360) % 360;
+  const tags = video.tags as Record<string, unknown> | undefined;
+  const tag = Number(tags?.rotate);
+  if (Number.isFinite(tag) && tag !== 0) return ((tag % 360) + 360) % 360;
+  const sideData = video.side_data_list as Array<Record<string, unknown>> | undefined;
+  for (const entry of sideData ?? []) {
+    const rotation = Number(entry.rotation);
+    if (Number.isFinite(rotation) && rotation !== 0) return ((rotation % 360) + 360) % 360;
+  }
+  return 0;
+}
+
 
 export async function probeVideo(path: string, signal?: AbortSignal): Promise<ProbeMeta> {
   const { stdout } = await run(
     ffprobeBin(),
     [
       '-v', 'error',
-      '-show_entries', 'format=duration,bit_rate,size:stream=index,codec_type,codec_name,width,height,bit_rate,avg_frame_rate,r_frame_rate,nb_frames',
-      '-of', 'json',
+      '-show_streams', '-show_format', '-of', 'json',
       path,
     ],
     30_000,
@@ -201,9 +228,14 @@ export async function probeVideo(path: string, signal?: AbortSignal): Promise<Pr
   const video = streams.find((s) => s.codec_type === 'video');
   const audio = streams.find((s) => s.codec_type === 'audio');
   if (!video) throw new Error('no video stream');
-  const width = Number(video.width) || 0;
-  const height = Number(video.height) || 0;
-  if (width <= 0 || height <= 0) throw new Error('video stream has invalid dimensions');
+  const codedWidth = Number(video.width) || 0;
+  const codedHeight = Number(video.height) || 0;
+  if (codedWidth <= 0 || codedHeight <= 0) throw new Error('video stream has invalid dimensions');
+  // Portrait footage is usually stored landscape-coded with a rotation
+  // side-data/tag; swap so the asset aspect reflects the displayed frame.
+  const dimensions = displayDimensions(codedWidth, codedHeight, rotationOf(video));
+  const width = dimensions.width;
+  const height = dimensions.height;
   const duration = Number(data.format?.duration) || 0;
   const size = Number(data.format?.size) || (await stat(path)).size;
   throwIfNormalizationAborted(signal);
@@ -300,7 +332,7 @@ export function normalizeReason(
     if (meta.sourceBitrate > efficient) return 'source bitrate exceeds efficient threshold';
   }
   // Very large files even if "compatible" (e.g. long 1080p high quality) — soft cap ~1.5GB
-  if (meta.size > 1.5 * 1024 * 1024 * 1024) return 'source file larger than 1.5GB';
+  if (meta.size > LARGE_SOURCE_BYTES) return 'source file larger than 1.5GB';
   return null;
 }
 
@@ -340,7 +372,7 @@ async function encodeTranscodedVideo(
         maxBitrate: options.targetBitrate,
         bufferSize: options.targetBitrate * 2,
         softwarePreset: 'veryfast',
-        ...(proxyQuality ? { hardwareQuality: 23 } : {}),
+        ...(proxyQuality ? { hardwareQuality: 23, qualityMode: proxyQuality } : {}),
       }),
       '-profile:v', 'high',
       ...(options.convertToCfr ? ['-fps_mode', 'cfr'] : []),
@@ -353,7 +385,7 @@ async function encodeTranscodedVideo(
       throwIfNormalizationAborted(signal);
       lastError = error;
       if (!isHardwareH264Encoder(encoder)) throw error;
-      console.warn(`[normalize-media] ${encoder} failed; falling back to libx264`);
+      console.warn(`[normalize-media] ${encoder} failed (${h264EncoderFallbackReason(encoder, error)}); falling back to libx264`);
       await unlink(outputPath).catch(() => {});
     }
   }
@@ -373,9 +405,14 @@ export async function encodeNormalized(
   signal?: AbortSignal,
 ): Promise<void> {
   const ffmpeg = ffmpegBin();
+  // Resolve the encoder before building decode args: NVIDIA NVENC requires
+  // `-hwaccel cuda`, not the platform-default d3d11va, or encode fails with
+  // "CreateInputBuffer failed" once the 64x64 probe bug is fixed.
+  const preferred = await resolveH264Encoder(ffmpeg);
+  throwIfNormalizationAborted(signal);
   const commonArgs = [
     '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
-    ...(await resolveHwDecodeArgs(ffmpeg, undefined)),
+    ...(await resolveHwDecodeArgs(ffmpeg, preferred)),
     '-i', inputPath, '-map', '0:v:0',
     ...(meta.hasAudio ? ['-map', '0:a:0?'] : ['-an']),
   ];

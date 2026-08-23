@@ -6,12 +6,12 @@
 // Runs on demand at transcription time; caches `<stem>.asr.ogg` (or .mp3).
 import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { rename, stat, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { isSafeUploadName, resolveUploadFile, uploadDir } from '../media-dir.ts';
 import { ffmpegBin, ffprobeBin } from '../media-binaries.ts';
+import { ffmpegThreadArgs, spawnMediaProcess } from '../media-process.ts';
 
 const MAX_JSON = 8 * 1024;
 const ASR_BITRATE = '64k';
@@ -74,7 +74,7 @@ function probeHasAudio(inputPath: string): Promise<boolean> {
       clearTimeout(timer);
       resolve(hasAudio);
     };
-    const probe = spawn(ffprobeBin(), [
+    const probe = spawnMediaProcess(ffprobeBin(), [
       '-v', 'error', '-select_streams', 'a',
       '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', inputPath,
     ], { stdio: ['ignore', 'pipe', 'ignore'] });
@@ -99,7 +99,7 @@ function probeHasAudio(inputPath: string): Promise<boolean> {
 
 function runFfmpeg(args: string[], timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(ffmpegBin(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawnMediaProcess(ffmpegBin(), [...ffmpegThreadArgs(), ...args], { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     const timer = setTimeout(() => {
       child.kill('SIGKILL');

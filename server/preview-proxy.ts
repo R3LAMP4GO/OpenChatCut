@@ -1,8 +1,8 @@
-import { spawn } from 'node:child_process';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { ffmpegBin, ffprobeBin } from './media-binaries.ts';
+import { ffmpegThreadArgs, spawnMediaProcess } from './media-process.ts';
 
 const PROBE_TIMEOUT_MS = 60_000;
 const PROXY_TIMEOUT_MS = 30 * 60_000;
@@ -40,7 +40,7 @@ export function runPreviewProcess(
   timeoutMs: number,
 ): Promise<PreviewProcessOutput> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnMediaProcess(command, [...ffmpegThreadArgs(), ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -121,7 +121,7 @@ export async function buildPreviewProxy(file: string, output: string, signal: Ab
     '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-i', file,
     '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn',
     '-vf', "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+    '-c:v', 'libx264', ...ffmpegThreadArgs(), '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
     '-force_key_frames', 'expr:gte(t,n_forced*0.5)', '-movflags', '+faststart',
     '-c:a', 'aac', '-b:a', '160k', output,
   ], signal, PROXY_TIMEOUT_MS);

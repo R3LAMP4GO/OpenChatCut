@@ -5,7 +5,7 @@
 // routing are configuration, not credentials: the explicit NON_SECRET_NAMES whitelist
 // lets keyStatus() echo their raw values (keyStatus().models) so the settings UI can
 // show and edit them.
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { atomicWriteFile } from "./plugins/project-store-durable.ts";
 import { AI_SDK_BASE_URL_FORMAT, resolveLlmBaseUrl } from "./llm-config.ts";
 import { decodePersistedEnvValue, mergeEnvText } from "./env-text.ts";
@@ -26,9 +26,10 @@ import {
 const ACTIVE_PROFILE = runtimeProfile();
 const ENV_PATH = ACTIVE_PROFILE.keystorePath;
 
-// Whitelist of settable env vars — mirrors what vite.config.ts reads. POST /api/keys
+// Whitelist of settable env vars — mirrors what config/vite.config.ts reads. POST /api/keys
 // rejects anything outside this set so the endpoint can never write arbitrary env.
 export const KEY_NAMES = [
+  "AGENT_IMPORT_ROOTS",
   "PROXY_URL",
   "LLM_API_KEY",
   "LLM_BASE_URL",
@@ -109,8 +110,12 @@ export const KEY_NAMES = [
   "KLING_BASE_URL",
   "MUREKA_API_KEY",
   "MUREKA_BASE_URL",
+  "ATLASCLOUD_API_KEY",
+  "ATLASCLOUD_API_BASE",
   "MINIMAX_API_KEY",
   "MINIMAX_BASE_URL",
+  "SONILO_API_KEY",
+  "SONILO_BASE_URL",
   "PEXELS_API_KEY",
   "PIXABAY_API_KEY",
   "UNSPLASH_ACCESS_KEY",
@@ -160,6 +165,7 @@ export const KEY_NAMES = [
   "MINIMAX_VIDEO_MODEL",
   "MUREKA_MUSIC_MODEL",
   "MINIMAX_MUSIC_MODEL",
+  "ATLASCLOUD_MUSIC_MODEL",
   // ── vendor routing (non-secret config) ──
   "PREFERRED_IMAGE_VENDOR",
   "PREFERRED_VOICE_VENDOR",
@@ -169,6 +175,8 @@ export const KEY_NAMES = [
   "LOCAL_ASR_MODEL",
   "TRANSCRIPTION_LANGUAGE",
   "TRANSCRIPTION_DIARIZATION",
+  "AUTO_TRANSCRIBE_INGEST",
+  "UI_SCALE",
   "OPENCHATCUT_SKILLS_DIR",
 ] as const;
 export type KeyName = (typeof KEY_NAMES)[number];
@@ -178,6 +186,7 @@ const SETTABLE = new Set<string>(KEY_NAMES);
 // not credentials). Deliberately a separate explicit list rather than derived from
 // KEY_NAMES: adding a key to the whitelist must never accidentally make it non-secret.
 export const NON_SECRET_NAMES: ReadonlySet<string> = new Set([
+  "AGENT_IMPORT_ROOTS",
   "PROXY_URL",
   "LLM_PROVIDER",
   "LLM_MODEL",
@@ -202,11 +211,15 @@ export const NON_SECRET_NAMES: ReadonlySet<string> = new Set([
   "GROQ_BASE_URL",
   "TRANSCRIPTION_LANGUAGE",
   "TRANSCRIPTION_DIARIZATION",
+  "AUTO_TRANSCRIBE_INGEST",
+  "UI_SCALE",
   "ELEVENLABS_SOUND_MODEL",
   "DOUBAO_TTS_RESOURCE_ID",
   "SEEDANCE_VIDEO_MODEL",
   "KLING_VIDEO_MODEL",
   "MUREKA_MUSIC_MODEL",
+  "ATLASCLOUD_API_BASE",
+  "ATLASCLOUD_MUSIC_MODEL",
   "MINIMAX_TTS_MODEL",
   "MINIMAX_VIDEO_MODEL",
   "MINIMAX_MUSIC_MODEL",
@@ -330,7 +343,7 @@ export function getKey(name: KeyName): string {
   return store.get(name) ?? "";
 }
 
-// Capability booleans derived from current key presence — SAME logic as the vite.config
+// Capability booleans derived from current key presence — SAME logic as config/vite.config.ts
 // `define` snapshot, but computed live so the agent perceives runtime key changes.
 export interface Caps {
   image: boolean;
@@ -367,8 +380,8 @@ export function computeCaps(): Caps {
       (getKey("PREFERRED_VOICE_VENDOR") === "cartesia" && has("CARTESIA_API_KEY")),
     video:
       has("SEEDANCE_API_KEY") || has("KLING_API_KEY") || has("MINIMAX_API_KEY") || has("BYTEPLUS_API_KEY"),
-    music: has("MUREKA_API_KEY") || has("MINIMAX_API_KEY"),
-    sound: has("ELEVENLABS_API_KEY"),
+    music: has("MUREKA_API_KEY") || has("MINIMAX_API_KEY") || has("ATLASCLOUD_API_KEY") || has("SONILO_API_KEY"),
+    sound: has("ELEVENLABS_API_KEY") || has("SONILO_API_KEY"),
     stock:
       has("PEXELS_API_KEY") ||
       has("PIXABAY_API_KEY") ||
@@ -450,11 +463,7 @@ export async function setKeys(patch: Record<string, unknown>): Promise<void> {
   );
   const isolated = isIsolatedDevProfile(ACTIVE_PROFILE);
   const merged = mergeEnvText(existing, clean, isolated);
-  if (isolated) {
-    await atomicWriteFile(ENV_PATH, merged, { mode: 0o600 });
-  } else {
-    await writeFile(ENV_PATH, merged, "utf8");
-  }
+  await atomicWriteFile(ENV_PATH, merged, { mode: 0o600 });
   for (const [name, v] of clean) {
     if (v) {
       store.set(name, v);
@@ -463,4 +472,3 @@ export async function setKeys(patch: Record<string, unknown>): Promise<void> {
     else store.delete(name);
   }
 }
-

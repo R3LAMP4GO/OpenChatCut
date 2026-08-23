@@ -1,11 +1,12 @@
 import type { MediaAsset, TimelineState } from '../editor/types';
+import { findAssetByReference } from './asset-reference';
 
 export interface SubmitMusicArgs {
   operationId?: string;
   prompt?: string;
   name?: string;
-  provider?: 'mureka' | 'minimax';
-  mode?: 'instrumental' | 'song' | 'prompt-song' | 'soundtrack' | 'track' | 't2m' | 'cover';
+  provider?: 'mureka' | 'minimax' | 'atlas' | 'sonilo';
+  mode?: 'instrumental' | 'song' | 'prompt-song' | 'soundtrack' | 'track' | 't2m' | 'cover' | 'v2m';
   lyrics?: string;
   isInstrumental?: boolean;
   lyricsOptimizer?: boolean;
@@ -23,7 +24,7 @@ export interface SubmitMusicArgs {
   instrumentalId?: string;
   vocalId?: string;
   melodyId?: string;
-  /** Mureka soundtrack image/video or track source audio. */
+  /** Mureka soundtrack image/video, track source audio, or Sonilo v2m video (the rendered cut). */
   sourceAssetId?: string;
   audioStartMs?: number;
   audioEndMs?: number;
@@ -57,10 +58,7 @@ export interface MusicGenerationSubmission {
 
 function resolveAsset(ref: string, state?: TimelineState, kind?: MediaAsset['kind']): MediaAsset {
   if (!state) throw new Error('project state required to resolve music source asset');
-  const clean = ref.replace(/^asset:\/\//, '').trim();
-  const asset = (state.assets ?? []).find(
-    (a) => a.id === clean || a.id.startsWith(clean) || a.name === clean || a.src === clean,
-  );
+  const asset = findAssetByReference(ref, state.assets ?? []);
   if (!asset) throw new Error(`music source asset not found: ${ref}`);
   if (kind && asset.kind !== kind) throw new Error(`music source asset is not ${kind}: ${ref}`);
   let pathname = asset.src;

@@ -44,8 +44,7 @@ function readPreviewSourceInitial(): PreviewSourceMode {
     const raw = localStorage.getItem(PREVIEW_SOURCE_KEY);
     if (raw === 'auto' || raw === 'original' || raw === 'proxy') return raw;
   } catch { /* private mode */ }
-  // Default to original: do not auto-generate preview proxies in the background.
-  // Users can opt in per session via the preview-quality control (proxy / auto).
+  // Keep existing projects on their original media unless the user opts in.
   return 'original';
 }
 

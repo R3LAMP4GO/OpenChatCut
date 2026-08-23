@@ -51,7 +51,7 @@ export default {
   'submit_image · 文生图 / 图生图，任一厂商即可。': 'submit_image · Text-to-image / image-to-image; any one vendor works.',
   'submit_voice · 文字转配音，任一厂商即可。': 'submit_voice · Text to voiceover; any one vendor works.',
   'submit_video · 文 / 图生视频，任一厂商即可。': 'submit_video · Text / image to video; any one vendor works.',
-  'submit_music · 文字生成配乐，任一厂商即可。': 'submit_music · Text to soundtrack; any one vendor works.',
+  'submit_music · 文字 / 成片生成配乐，任一厂商即可。': 'submit_music · Text or finished cut to soundtrack; any one vendor works.',
   'search_stock_media · 搜索可商用图片 / 视频素材。': 'search_stock_media · Search commercially usable photos / videos.',
   'transcribe_track · 词级字幕、清口水、删词。': 'transcribe_track · Word-level captions, filler cleanup, word deletion.',
   '素材的本地保存目录，与可选的 R2 云备份。': 'Local save directory for media, plus optional R2 cloud backup.',
@@ -129,6 +129,8 @@ export default {
   // ──Page Note/Field Note──
   'MiniMax 同一个 Key，配置一次全能力（生图 / 配音 / 视频 / 音乐）通用。': 'One MiniMax key covers every capability (image / voice / video / music) — configure once.',
   'Key 同时用于音效生成（submit_sound）。': 'The key is also used for sound-effect generation (submit_sound).',
+  '按成片生成：把渲染好的视频交给 Sonilo，配乐跟着画面节奏走（可选一句风格提示，不填也行）。配乐自带授权、可商用（以条款为准）；每条音轨附 license_id 留档。同一个 Key 也用于按成片生成音效（submit_sound，免版税）。':
+    'Generates from the finished cut: hand Sonilo the rendered video and the music follows its pacing (one optional style hint; works without one). Music is licensed, safe for commercial use (terms apply); each track comes with a license_id record. The same key also powers video-matched sound effects (submit_sound, royalty-free).',
   '可直接使用 Anthropic 官方 API Key；如使用兼容服务，再修改 Base URL 和模型。': 'Use an official Anthropic API key directly, or change the Base URL and model for a compatible service.',
   '默认使用 Claude Fable 5；自定义兼容地址时，也可填写该服务支持的模型 ID。': 'Claude Fable 5 is the default. With a compatible endpoint, enter any model ID supported by that service.',
   '每个厂商独立保存地址、密钥与模型。先测试连接，成功后可从接口返回的模型中选择。': 'Each provider keeps its own endpoint, key, and model. Test the connection, then choose from the models returned by that API.',
@@ -262,7 +264,9 @@ export default {
   '默认 https://ark.cn-beijing.volces.com/api/v3': 'Default https://ark.cn-beijing.volces.com/api/v3',
   '默认 https://api-singapore.klingai.com': 'Default https://api-singapore.klingai.com',
   '默认 https://api.mureka.ai': 'Default https://api.mureka.ai',
+  '默认 https://api.sonilo.com': 'Default https://api.sonilo.com',
   '默认 https://api.minimaxi.com': 'Default https://api.minimaxi.com',
+  '默认 https://api.atlascloud.ai/api/v1': 'Default https://api.atlascloud.ai/api/v1',
   '默认 https://api.mistral.ai/v1': 'Default https://api.mistral.ai/v1',
   '默认 https://api.groq.com/openai/v1': 'Default https://api.groq.com/openai/v1',
 
@@ -377,8 +381,8 @@ export default {
   '正在读取 MCP 连接令牌…': 'Loading the MCP connection token…',
   '无法读取 MCP 连接令牌，请从受信任的编辑器窗口重试。':
     'Could not load the MCP connection token. Retry from a trusted editor window.',
-  'MCP 端点始终要求 Bearer 令牌。令牌只在当前受信任编辑器会话中显示，不写入工程、聊天或浏览器存储；服务重启后自动生成的令牌会变化，需要重新复制配置。OPENCHATCUT_MCP_TOKEN 可覆盖自动令牌。':
-    'The MCP endpoint always requires a bearer token. The token is shown only in the current trusted editor session and is never written to the project, chat, or browser storage. An automatically generated token changes after a server restart, so copy the configuration again. OPENCHATCUT_MCP_TOKEN overrides the generated token.',
+  'MCP 端点始终要求 Bearer 令牌。令牌在首次启动时生成并保存在本机，重启后保持不变，配置一次即可持续使用；OPENCHATCUT_MCP_TOKEN 环境变量可覆盖。令牌只在当前受信任编辑器会话中显示，不写入工程、聊天或浏览器存储。':
+    'The MCP endpoint always requires a bearer token. The token is generated on first launch and kept on this machine, so it stays the same across restarts: registering once keeps working; the OPENCHATCUT_MCP_TOKEN environment variable overrides it. The token is shown only in the current trusted editor session and is never written to the project, chat, or browser storage.',
   '设置 → 连接器 → 添加自定义连接器,粘贴上面的端点地址即可。':
     'Settings → Connectors → Add custom connector, then paste the endpoint above.',
   '端点默认仅监听本机;对外暴露时请配置 OPENCHATCUT_MCP_TOKEN 鉴权。桌面端 5199 端口被占用时会回退随机端口,以启动日志与本页地址为准。':
@@ -407,8 +411,8 @@ export default {
   '模型按需下载到本机，不随应用打包。首次使用或下载模型时自动加速下载。':
     'Models are downloaded to this machine on demand — they are not bundled with the app. Downloads use the accelerated pipeline automatically.',
   '桌面原生推理加速': 'Native desktop inference acceleration',
-  '启用后，转写、画面语义、节拍与音乐语义模型自动选择 Windows DirectML 或 macOS CoreML/原生 CPU；转写模型在编辑器打开后后台预热，其他模型首次使用时按需加载；失败时回退浏览器引擎。':
-    'When enabled, transcription, visual-semantic, rhythm, and music-semantic models automatically use Windows DirectML or macOS CoreML/native CPU. Transcription preloads after the editor opens; other models load on first use. Failures fall back to the browser engine.',
+  '启用后，转写使用 macOS Metal 或原生 CPU；画面语义、节拍与音乐语义模型自动选择 Windows DirectML、Linux CUDA、macOS CoreML 或浏览器 WebGPU；失败时回退 CPU 或浏览器引擎。':
+    'When enabled, transcription uses macOS Metal or native CPU. Visual-semantic, rhythm, and music-semantic models select Windows DirectML, Linux CUDA, macOS CoreML, or browser WebGPU. Failures fall back to CPU or the browser engine.',
   'WebGPU 转写加速': 'WebGPU transcription acceleration',
   '无法读取模型列表：{err}': 'Cannot load the model list: {err}',
   '默认模型': 'Default model',
@@ -488,4 +492,5 @@ export default {
   '工程、历史版本与素材的存放位置。默认放在应用数据目录里；改到你自己的目录（外置硬盘、同步盘）后，卸载或重装应用都不会动到作品。保存时会把现有数据复制到新目录（原目录保留不删），重启应用后生效。': 'Where projects, version history and media are kept. Defaults to the app data folder; point it at a folder of your own (external drive, synced folder) and uninstalling or reinstalling the app never touches your work. Saving copies the existing data to the new folder (the old one is kept, not deleted); takes effect after a restart.',
   '桌面端点击“选择目录”；也可手动输入绝对路径（可用 ~/ 开头）。清除后回到默认目录。': 'On desktop, click "Choose folder"; you can also type an absolute path (~/ accepted). Clear it to return to the default folder.',
   '已保存 · 重启应用后新的工程存储目录才会生效': 'Saved · the new project storage folder takes effect after a restart',
+  '该模型不在内置目录，以上数值为估算（上下文 {context} / 输出 {output}）。若与实际不符，点「展开」手动修改。': 'This model is not in the built-in catalog, so these values are estimates (context {context} / output {output}). If they do not match the real model, expand and adjust them manually.',
 } as Record<string, string>;
