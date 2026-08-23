@@ -7,7 +7,7 @@ import { unlinkItems } from './linkGroups';
 import { reconcileTimelineCaptionReferences, remapSplitTimelineCaptionReferences } from '../captions/reconcileSources';
 import { reconcileTransitions } from './transitionReconcile';
 import { hasOperationalTranscript } from '../transcript/types';
-import { splitClipTranscript } from '../transcript/edit';
+import { splitClipTranscript, usesEditedWordFlow } from '../transcript/edit';
 import type { Action } from './reducerActions';
 import { retimePatchForItem, type OverwriteLaneAction } from './reducerTimelineHelpers';
 
@@ -46,7 +46,9 @@ export function splitTimelineItem(
     id: newId,
     startFrame: atFrame,
     durationInFrames: item.durationInFrames - cut,
-    srcInFrame: wordDriven && transcriptParts ? 0 : sourceWindow.endFrame,
+    // Plain transcript splits stay in the original media window; edited word-flow
+    // splits repack their remaining source segments from zero.
+    srcInFrame: wordDriven && transcriptParts && usesEditedWordFlow(item) ? 0 : sourceWindow.endFrame,
     fadeInFrames: undefined,
     ...(transcriptParts ? {
       transcript: transcriptParts.right.transcript,
