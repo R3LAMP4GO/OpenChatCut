@@ -3,10 +3,9 @@ import { refPromptToken } from '../../agent/selection-refs';
 import type { MediaAsset } from '../../editor/types';
 import { kindOf } from '../../media/upload';
 import {
-  parseDocxText,
-  parsePdfText,
-} from './chatDocumentParse';
-import { assertChatDocumentSize, validatedChatDocumentText } from './chatDocumentLimits';
+  projectDocumentKind,
+  readProjectDocumentFiles,
+} from '../../media/projectFile';
 import {
   attachChatAttachmentPlaceholder,
   beginChatAttachmentImport,
@@ -42,37 +41,9 @@ interface AttachmentImportBinding {
   readonly setError: (message: string | null) => void;
 }
 
-const DOCUMENT_EXTENSIONS = new Set(['.md', '.markdown', '.txt', '.srt', '.csv']);
-
 /** Text document attachments (issue #84): read straight into the composer as
  * editable text; no media-pool asset is created. */
-export function chatDocumentKind(file: File): 'text' | 'docx' | 'pdf' | null {
-  const lower = file.name.toLowerCase();
-  const dot = lower.lastIndexOf('.');
-  const ext = dot >= 0 ? lower.slice(dot) : '';
-  if (DOCUMENT_EXTENSIONS.has(ext)) return 'text';
-  if (ext === '.docx') return 'docx';
-  if (ext === '.pdf') return 'pdf';
-  return null;
-}
-
-async function importDocument(binding: AttachmentImportBinding, file: File): Promise<void> {
-  const kind = chatDocumentKind(file);
-  let text: string;
-  try {
-    assertChatDocumentSize(file.size);
-    if (kind === 'docx') text = await parseDocxText(await file.arrayBuffer());
-    else if (kind === 'pdf') text = await parsePdfText(await file.arrayBuffer());
-    else text = validatedChatDocumentText(await file.text());
-  } catch (error) {
-    binding.setError(error instanceof Error ? binding.t(error.message) : binding.t('文档解析失败'));
-    return;
-  }
-  const block = `[文档: ${file.name}]\n${text.trim()}\n`;
-  binding.updateInput((value) => (value.trim() ? `${value}\n${block}` : block));
-}
-
-
+export const chatDocumentKind = projectDocumentKind;
 
 function assetReference(asset: MediaAsset): AgentReference {
   return { id: asset.id, name: asset.name, kind: asset.kind };
@@ -143,7 +114,12 @@ export function createChatAttachmentImporter(binding: AttachmentImportBinding): 
     binding.setError(unsupported > 0
       ? binding.t('已忽略不支持的文件（仅支持 视频 / 图片 / 音频 / GIF / SVG / md / txt / srt / csv / docx / pdf）')
       : null);
-    for (const file of documents) await importDocument(binding, file);
+    const parsed = await readProjectDocumentFiles(documents);
+    if (parsed.blocks.length) {
+      const text = parsed.blocks.join('\n');
+      binding.updateInput((value) => (value.trim() ? `${value}\n${text}` : text));
+    }
+    if (parsed.errors[0]) binding.setError(binding.t(parsed.errors[0]));
     await Promise.all(media.map((file) => importOne(binding, file)));
   };
 }

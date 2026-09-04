@@ -40,11 +40,9 @@ import {
   acquireServerRunOwnership,
   releaseServerRunOwnership,
 } from './serverRunOwnership';
-
 interface MutableRef<T> {
   current: T;
 }
-
 export interface ServerRunSendEnvironment {
   readonly projectId: string;
   readonly refs: {
@@ -141,15 +139,6 @@ async function prepareServerRunPayload(
     ? `${trimmed}\n\n${JSON.stringify({ type: 'chat_context_entry', entries })}`
     : trimmed;
   let modelMessages = options.session?.modelMessages() ?? [];
-  // Vision pass-through for server-run: when the active main model is text-only
-  // and a custom vision model is configured, describe image attachments in the
-  // history to text before submitting, so the server receives them as usable
-  // context instead of dropping them. A vision-capable main model keeps the
-  // raw image parts (projectedHistory carries them through) so it can see the
-  // actual pixels instead of a lossy description. A text-only main model
-  // without a vision model gets images stripped with a visible omission note
-  // (matching the browser path) instead of sending them to a model that
-  // cannot read them.
   const supportsImages = choice.capabilities.supportsImages.value;
   const vision = resolveVisionModel(choice);
   if (!supportsImages && vision) {
@@ -164,6 +153,8 @@ async function prepareServerRunPayload(
     model: choice.model,
     backend: choice.backend,
     cacheMode: settings.cacheMode,
+    autonomousAcceptance: settings.autonomousAcceptance,
+    maxAcceptanceIterations: settings.maxAcceptanceIterations,
     maxOutputTokens: effectiveOutputTokenBudget(
       choice.capabilities.maxOutputTokens.value,
       choice.capabilities.contextWindowTokens.value,
@@ -512,6 +503,15 @@ export async function sendServerRun(
       role: 'error',
       text: '服务端任务已由另一个页面接管，本页不会重复执行。',
     });
+    return;
+  }
+  // prepare() checked `running` before two awaits (payload build + ownership),
+  // and ownership QUEUES behind an in-flight run rather than failing. Without
+  // this re-check a double Enter starts a second run with the same prompt as
+  // soon as the first finishes — a duplicate edit, or a duplicate paid
+  // generation. Ownership is released so the queued slot is not held.
+  if (environment.refs.running.current) {
+    releaseServerRunOwnership(environment.projectId, prepared.payload.runId);
     return;
   }
   const active = setupLocalServerRun(environment, prepared);

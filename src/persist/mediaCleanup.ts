@@ -8,6 +8,7 @@
 import { deleteMediaBlob } from './mediaBlobStore';
 import { listPacks } from '../plugins/store';
 import { listProjectDocIds, listProjects, loadProject, loadRawProject, purgeProject } from './projectStore';
+import { listVersions } from './versionStore';
 import { collectUploadSrcs, rawUploadSrcs } from './projectTransfer';
 
 const MEDIA_PREFIX = '/media/uploads/';
@@ -36,6 +37,12 @@ export async function collectAllUploadRefs(excludeId?: string): Promise<Set<stri
   const refs = new Set<string>();
   for (const id of await listProjectDocIds()) {
     if (id === excludeId) continue;
+    // Version snapshots reference assets the CURRENT document may have
+    // dropped: deleting a clip then cleaning up would otherwise delete the
+    // media that restoring a 5-minute-old snapshot still needs.
+    for (const version of await listVersions(id).catch(() => [])) {
+      for (const src of collectUploadSrcs(version.doc)) refs.add(src);
+    }
     const doc = await loadProject(id);
     if (doc) {
       for (const src of collectUploadSrcs(doc)) refs.add(src);
@@ -64,7 +71,10 @@ export async function deleteUploadFile(name: string): Promise<boolean> {
   const res = await fetch(`/upload?name=${encodeURIComponent(name)}`, {
     method: 'DELETE',
   });
-  await deleteMediaBlob(MEDIA_PREFIX + name).catch(() => {});
+  // Only drop the browser cache copy once the server confirms the disk file is
+  // gone. Deleting it after a rejected DELETE would remove one of the three
+  // fallback layers while the file itself still exists.
+  if (res.ok) await deleteMediaBlob(MEDIA_PREFIX + name).catch(() => {});
   return res.ok;
 }
 
@@ -75,16 +85,26 @@ export interface CleanupScan {
   sourceCandidates: UnreferencedSourceCandidate[];
 }
 
+/** Pure decision: which project docs are orphans safe to purge. An empty index
+ * while docs exist means the index itself is lost or unreadable (listProjects
+ * degrades to [] on any read error) — treating every doc as an orphan then
+ * would permanently destroy all projects, so nothing qualifies. */
+export function orphanDocIdsToPurge(
+  indexedIds: ReadonlySet<string>,
+  docIds: readonly string[],
+): string[] {
+  if (indexedIds.size === 0 && docIds.length > 0) return [];
+  return docIds.filter((id) => !indexedIds.has(id));
+}
+
 /** Inventory only: orphan project records may be purged, but source uploads are
  * returned as confirmation-required candidates and are never deleted here. */
 export async function scanUnreferenced(): Promise<CleanupScan> {
   const indexed = new Set((await listProjects({ includeDeleted: true })).map((m) => m.id));
   let orphanDocsPurged = 0;
-  for (const id of await listProjectDocIds()) {
-    if (!indexed.has(id)) {
-      await purgeProject(id);
-      orphanDocsPurged += 1;
-    }
+  for (const id of orphanDocIdsToPurge(indexed, await listProjectDocIds())) {
+    await purgeProject(id);
+    orphanDocsPurged += 1;
   }
   const [files, refs] = await Promise.all([listUploadFiles(), collectAllUploadRefs()]);
   const sourceCandidates = unreferencedOf(files, refs).map((file) => ({

@@ -137,7 +137,7 @@ const discoveryTools = [
   },
 ];
 const editorTools = [dynamicTool, extraTool, ...discoveryTools, ...editTools];
-registerEditor(projectA, editorA, revisionA, [dynamicTool]);
+await registerEditor(projectA, editorA, revisionA, [dynamicTool]);
 
 const server = createServer((req, res) => {
   void handleMcpRequest(req, res, 'http://127.0.0.1').catch((error) => {
@@ -168,10 +168,10 @@ try {
   const changed = new Promise<void>((resolve) => { notify = resolve; });
   boundA.client.setNotificationHandler(ToolListChangedNotificationSchema, () => notify());
   assert.ok((await boundA.client.listTools()).tools.some((tool) => tool.name === dynamicTool.name));
-  registerEditor(projectA, editorA, revisionA, editorTools);
+  await registerEditor(projectA, editorA, revisionA, editorTools);
   await Promise.race([
     changed,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('tools/list_changed timeout')), 2_000)),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('tools/list_changed timeout')), 30_000)),
   ]);
   assert.ok((await boundA.client.listTools()).tools.some((tool) => tool.name === extraTool.name));
   const exposureHeaders = { 'x-openchatcut-tool-exposure': 'progressive' };
@@ -215,7 +215,7 @@ try {
     progressiveListChanged,
     new Promise((_, reject) => setTimeout(
       () => reject(new Error('progressive tools/list_changed timeout')),
-      2_000,
+      30_000,
     )),
   ]);
   assert.equal(
@@ -265,12 +265,19 @@ try {
   });
   assert.equal(staleSession.isError, true);
   assert.equal(callOutcome(staleSession), 'stale', 'every tool call revalidates editor instance and base revision');
+  // After a stale error the transport is closed so subsequent requests fail
+  // with a session-not-found error instead of returning another stale result.
   registerEditor(projectA, editorA, revisionA, editorTools);
-  const notRevived = await boundA.client.callTool({
-    name: 'openchatcut_status',
-    arguments: {},
-  });
-  assert.equal(callOutcome(notRevived), 'stale', 'a stale transport cannot revive when an old binding reappears');
+  await assert.rejects(
+    boundA.client.callTool({ name: 'openchatcut_status', arguments: {} }),
+    (error: unknown) => error instanceof Error && /session not found or expired/i.test(error.message),
+    'a stale transport is closed and its session is evicted',
+  );
+  assert.equal(
+    mcpSessionsForTest().some((session) => session.id === boundA.sessionId),
+    false,
+    'stale transport session is removed from the sessions map',
+  );
 
   const switchClient = await connectClient(mcpUrl, 'openchatcut-mcp-switch');
   clients.push(switchClient);

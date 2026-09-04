@@ -16,10 +16,10 @@ import {
   materializeVideoReferences,
   mediaDataUrl,
   providerMediaUrl,
-  saveImageUrl,
-  saveVideo,
   ServerReferencePreflightError,
 } from './video-media.ts';
+import { generateGrokVideo } from './grok-video-provider.ts';
+import { saveVideoResults } from './video-result-save.ts';
 import {
   hailuoApiResolution, seedanceApiResolution, validateVideoRequest, videoSeconds,
   type KlingVideoReferType, type ValidVideoRequest, type VideoRequest,
@@ -46,6 +46,9 @@ interface VideoOptions {
   byteplusBaseUrl: string;
   byteplusApiKey: string;
   byteplusModel: string;
+  xaiBaseUrl: string;
+  xaiApiKey: string;
+  xaiVideoModel: string;
 }
 
 async function readJson(req: IncomingMessage): Promise<VideoRequest> {
@@ -167,6 +170,8 @@ async function generateSeedance(
   throw new Error(`${config.providerId} generation timed out`);
 }
 
+/** xAI Grok Imagine Video (text-to-video): async request_id + polling. The
+ * subscription session token takes priority over the configured API key. */
 function seedanceConfig(model: 'seedance2' | 'byteplus', options: VideoOptions): SeedanceConfig {
   return model === 'seedance2'
     ? {
@@ -376,21 +381,6 @@ async function generateHailuo(
   throw new Error('hailuo generation timed out');
 }
 
-async function saveVideoResults(
-  jobId: string,
-  name: string,
-  videoUrl: string,
-  lastFrameUrl?: string,
-): Promise<GenerationResult | GenerationResult[]> {
-  const video = { assetId: jobId, kind: 'video' as const, name, ...await saveVideo(videoUrl) };
-  if (!lastFrameUrl) return video;
-  const path = await saveImageUrl(lastFrameUrl);
-  return [video, {
-    assetId: `${jobId}:last-frame`, kind: 'image', name: `${name} · Last frame`, path,
-    durationSeconds: 5,
-  }];
-}
-
 async function runVideoOperation(
   operationId: string,
   name: string,
@@ -415,25 +405,28 @@ async function runVideoOperation(
         expectedResultCount,
       );
     } else {
-      const url = input.model === 'kling'
-        ? await generateKling(input, options, registerProviderTask, providerTaskId)
-        : await generateHailuo(input, options, registerProviderTask, providerTaskId);
+      const url = input.model === 'grok-imagine-video'
+        ? await generateGrokVideo(input, options, registerProviderTask, providerTaskId)
+        : input.model === 'kling'
+          ? await generateKling(input, options, registerProviderTask, providerTaskId)
+          : await generateHailuo(input, options, registerProviderTask, providerTaskId);
       urls = requireGenerationResultUrls([url], expectedResultCount);
     }
   }
   urls = requireGenerationResultUrls(urls, expectedResultCount);
+  const resultFetch = input.model === 'grok-imagine-video' ? fetchWithProxy : undefined;
   const download = () => saveVideoResults(
     operationId,
     name,
     urls[0],
     (input.model === 'seedance2' || input.model === 'byteplus') && input.returnLastFrame ? urls[1] : undefined,
+    resultFetch,
   );
   for (const [index, url] of urls.entries()) await registerDownload(url, download, index);
   return download();
 }
-
 export function videoGenerationPlugin(options: VideoOptions): Plugin {
-  for (const provider of ['seedance2', 'kling', 'hailuo', 'byteplus'] as const) {
+  for (const provider of ['seedance2', 'kling', 'hailuo', 'byteplus', 'grok-imagine-video'] as const) {
     registerGenerationJobResumer('submit_video', provider, async (
       snapshot: GenerationJobSnapshot,
       _update,

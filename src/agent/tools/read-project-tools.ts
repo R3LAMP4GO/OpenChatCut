@@ -7,6 +7,7 @@ import {
   timelineTrackIds,
   trackAlias,
   trackKind,
+  selectedIdsOf,
   type Timeline,
   type TimelineItem,
   type MediaAsset,
@@ -15,6 +16,7 @@ import {
 import { backgroundFillStrengthOf } from '../../editor/backgroundFill';
 import { hasOperationalTranscript } from '../../transcript/types';
 import { resolveTimeline } from './timeline-target';
+import { projectTimelineItem } from './timeline-item-projection';
 
 // read_project returns one overview of project state, including timeline and assets.
 // Aggregates existing store/doc fields; no separate backend.
@@ -32,22 +34,14 @@ function slimItem(
   assets: readonly MediaAsset[],
   offlineSrcs: ReadonlySet<string>,
 ) {
-  const sourceAssetId = it.src ? assets.find((asset) => asset.src === it.src)?.id ?? null : null;
   const denoisedAssetId = it.denoisedSrc
     ? assets.find((asset) => asset.src === it.denoisedSrc && asset.kind === 'audio')?.id ?? null
     : null;
   return {
-    id: it.id,
-    trackId: it.track,
-    track: trackAlias(state, it.track),
-    name: it.name,
-    kind: it.kind,
-    startFrame: it.startFrame,
-    durationInFrames: it.durationInFrames,
-    src: it.src ?? null,
+    ...projectTimelineItem(it, state, assets),
+    selected: selectedIdsOf(state).includes(it.id),
     offline: !!it.src && offlineSrcs.has(it.src),
     templateId: it.templateId ?? null,
-    volume: it.volume ?? null,
     zoom: it.zoom ?? null,
     backgroundFill: it.backgroundFill === true,
     backgroundFillStrength: it.backgroundFill === true ? backgroundFillStrengthOf(it) : null,
@@ -59,7 +53,6 @@ function slimItem(
     props: it.props ?? null,
     hasTranscript: hasOperationalTranscript(it),
     transcriptStale: it.transcriptStale === true,
-    sourceAssetId,
     voiceIsolation: it.denoisedSrc
       ? { denoisedAssetId, strength: it.denoiseStrength ?? null }
       : null,
@@ -162,6 +155,8 @@ export async function execReadProjectTool(
       );
     }
 
+    const selectedIds = selectedIdsOf(state);
+    const selectedItems = state.items.filter((it) => selectedIds.includes(it.id));
     out.timeline = {
       id: timeline.id,
       name: timeline.name,
@@ -169,6 +164,15 @@ export async function execReadProjectTool(
       width: state.width,
       height: state.height,
       fit: state.fit ?? 'contain',
+      selectedId: state.selectedId ?? null,
+      selectedIds,
+      selected: selectedItems.map((it) => ({
+        id: it.id,
+        track: trackAlias(state, it.track),
+        trackId: it.track,
+        name: it.name,
+        kind: it.kind,
+      })),
       tracks: timelineTrackIds(state).map((id) => {
         // The gaps are calculated based on the entire track (not affected by from/to, itemId filtering), otherwise the holes reported are false.
         const gaps = trackKind(state, id) === 'caption' ? [] : trackGaps(state.items, id);
@@ -247,6 +251,9 @@ export async function execReadProjectTool(
         height: a.height ?? null,
         folderId: a.folderId ?? null,
         favorite: a.favorite ?? false,
+        ...(a.props?.openchatcutDerivedFrom && typeof a.props.openchatcutDerivedFrom === 'object'
+          ? { derivedFrom: a.props.openchatcutDerivedFrom }
+          : {}),
         ...(includeCode && assetIds.length && a.code ? { code: a.code } : {}),
       })),
       assetCount: doc.assets.length,

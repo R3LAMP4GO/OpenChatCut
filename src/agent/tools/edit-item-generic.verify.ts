@@ -3,7 +3,7 @@
 // + that commit delegates to the right editor commands, and the atomic-abort contract via
 // the same validators execEditItemTool batches. Run: tsx src/agent/tools/edit-item-generic.check.ts
 import assert from 'node:assert';
-import type { MediaAsset, MediaRelinkResult, TimelineState } from '../../editor/types';
+import type { ClipTransform, MediaAsset, MediaRelinkResult, TimelineState } from '../../editor/types';
 import {
   GENERIC_ITEM_KINDS, GENERIC_ADD_KINDS, validateGenericAdd, validateGenericUpdate, validateGenericDelete, applyGeneric,
   didYouMean, rejectUnknownFields, type GenericCommands,
@@ -87,6 +87,20 @@ function recorder(relinkResult: MediaRelinkResult = { ok: true, changed: true })
   assert.deepEqual(calls.map((c) => c[0]), ['setItemKeyframe', 'setItemKeyframe', 'setItemKeyframe'], 'one setItemKeyframe per point');
   assert.deepEqual(calls[1], ['setItemKeyframe', 'v1_abc', 'opacity', 30, 0, 'easeOut'], 'frame/value/easing pass through');
 }
+for (const [alias, canonical] of [
+  ['ease-in', 'easeIn'],
+  ['ease-out', 'easeOut'],
+  ['ease-in-out', 'easeInOut'],
+] as const) {
+  const plan = validateGenericUpdate(state, {
+    type: 'video', itemId: 'v1_abc',
+    keyframes: { opacity: [{ frame: 0, value: 1, easing: alias }] },
+  });
+  assert.equal(plan.error, undefined, `${alias} validates`);
+  const { calls, commands } = recorder();
+  applyGeneric(plan, commands);
+  assert.deepEqual(calls[0], ['setItemKeyframe', 'v1_abc', 'opacity', 0, 1, canonical], `${alias} canonicalizes before commit`);
+}
 assert.ok(validateGenericUpdate(state, { type: 'video', itemId: 'v1_abc', keyframes: { opacity: [{ frame: 0, value: 2 }] } }).error, 'out-of-range keyframe value errors');
 assert.ok(validateGenericUpdate(state, { type: 'video', itemId: 'v1_abc', keyframes: { blur: [{ frame: 0, value: 1 }] } }).error, 'unknown keyframe prop errors');
 assert.ok(validateGenericUpdate(state, { type: 'video', itemId: 'v1_abc', keyframes: { opacity: [{ frame: 0, value: 1, easing: 'zigzag' }] } }).error, 'bad easing errors');
@@ -98,11 +112,34 @@ assert.ok(validateGenericUpdate(state, { type: 'video', itemId: 'nope' }).error,
 // ── invalid track → error ──
 assert.ok(validateGenericUpdate(state, { type: 'video', itemId: 'v1_abc', track: 'A9' }).error, 'bad track errors');
 
-// ── source live: assetId on update is hard-rejected (replace via deletes+adds) ──
+// ── atomic pool-asset replacement preserves the existing slot ──
 {
-  const err = String(validateGenericUpdate(state, { type: 'video', itemId: 'v1_abc', assetId: 'vid_new' }).error ?? '');
-  assert.ok(err.includes('assetId cannot be updated'), `assetId ban: ${err}`);
-  assert.ok(err.includes('deletes') && err.includes('adds'), 'points to deletes+adds replace path');
+  const replacementAssets = [{
+    id: 'vid_new', kind: 'video', name: 'new', src: '/media/new.mp4', durationInFrames: 180,
+  }] as unknown as MediaAsset[];
+  const plan = validateGenericUpdate(state, {
+    type: 'video', itemId: 'v1_abc', assetId: 'vid_new',
+    sourceStartFrame: 15, sourceDurationInFrames: 60,
+  }, replacementAssets);
+  assert.equal(plan.error, undefined, 'pool replacement validates');
+  assert.equal(plan.plan, 'replacePoolAsset');
+  assert.equal(plan.itemId, 'v1_abc');
+  assert.equal(plan.assetId, 'vid_new');
+  assert.equal(plan.srcInFrame, 15);
+  assert.equal(plan.durationInFrames, 60);
+}
+// source-frame aliases are exact; source duration respects playback rate.
+{
+  const speedState = {
+    ...state,
+    items: [{ ...state.items[0]!, playbackRate: 2 }],
+  } as TimelineState;
+  const plan = validateGenericUpdate(speedState, {
+    type: 'video', itemId: 'v1_abc', sourceStartFrame: 12, sourceDurationInFrames: 80,
+  });
+  assert.equal(plan.error, undefined);
+  assert.equal(plan.srcInFrame, 12);
+  assert.equal(plan.durationInFrames, 40, '80 source frames at 2x occupy 40 timeline frames');
 }
 // ── fromFrame alias + id alias ──
 {
@@ -204,5 +241,57 @@ assert.ok(validateGenericAdd(state, pool, { type: 'video' }).error, 'missing ass
 assert.equal(validateGenericAdd(state, pool, { type: 'video', assetId: 'vid_broll01', fromFrame: 90 }).startFrame, 90);
 // delete by id alias
 assert.equal(validateGenericDelete(state, { type: 'video', id: 'v1_abc' }).itemId, 'v1_abc');
+
+// ── transform.crop: composition pixels → stored fractions; per-edge merge ──
+{
+  const plan = validateGenericUpdate(state, { type: 'video', itemId: 'v1_abc', transform: { crop: { left: 384 } } }) as { error?: string; transform?: ClipTransform };
+  assert.equal(plan.error, undefined, 'crop left px validates');
+  assert.equal(plan.transform?.crop?.left, 384 / 1920);
+  const { calls, commands } = recorder();
+  applyGeneric(plan, commands);
+  assert.deepEqual(calls.find((c) => c[0] === 'setItemTransform')![2], { crop: { left: 384 / 1920, top: 0, right: 0, bottom: 0 } });
+}
+{
+  const cropped = {
+    ...state,
+    items: [{ ...state.items[0]!, transform: { crop: { left: 0.1, right: 0.05 } } }],
+  } as TimelineState;
+  const plan = validateGenericUpdate(cropped, { type: 'video', itemId: 'v1_abc', transform: { crop: { top: 108 } } }) as { error?: string; transform?: ClipTransform };
+  assert.equal(plan.error, undefined);
+  assert.equal(plan.transform?.crop?.left, 0.1);
+  assert.equal(plan.transform?.crop?.right, 0.05);
+  assert.equal(plan.transform?.crop?.top, 108 / 1080);
+}
+{
+  const plan = validateGenericUpdate(state, { type: 'video', itemId: 'v1_abc', transform: { crop: null } }) as { error?: string; transform?: ClipTransform };
+  assert.equal(plan.error, undefined, 'crop null clears');
+  assert.equal(plan.transform?.crop, undefined);
+}
+{
+  const plan = validateGenericUpdate(state, { type: 'video', itemId: 'v1_abc', transform: { flexCrop: { right: 192 } } }) as { error?: string; transform?: ClipTransform };
+  assert.equal(plan.error, undefined, 'flexCrop alias validates');
+  assert.equal(plan.transform?.crop?.right, 192 / 1920);
+}
+{
+  const err = String(validateGenericUpdate(state, { type: 'video', itemId: 'v1_abc', transform: { crop: { left: 10 }, flexCrop: { left: 10 } } }).error ?? '');
+  assert.ok(err.includes('flex crop'), err);
+}
+{
+  const selected = { ...state, selectedId: 'v1_abc', selectedIds: ['v1_abc'] } as TimelineState;
+  const plan = validateGenericUpdate(selected, { type: 'video', transform: { flexCrop: { left: 96 } } }) as { error?: string; itemId?: string; transform?: ClipTransform };
+  assert.equal(plan.error, undefined, 'omit itemId uses inspector selection');
+  assert.equal(plan.itemId, 'v1_abc');
+  assert.equal(plan.transform?.crop?.left, 96 / 1920);
+}
+{
+  const selected = { ...state, selectedId: 'v1_abc', selectedIds: ['v1_abc'] } as TimelineState;
+  const plan = validateGenericUpdate(selected, { type: 'video', itemId: 'selected', transform: { crop: { top: 54 } } }) as { error?: string; itemId?: string };
+  assert.equal(plan.error, undefined);
+  assert.equal(plan.itemId, 'v1_abc');
+}
+{
+  const err = String(validateGenericUpdate(state, { type: 'video', transform: { crop: { left: 10 } } }).error ?? '');
+  assert.ok(err.includes('no clip selected'), err);
+}
 
 console.log('edit-item-generic.check.ts OK');

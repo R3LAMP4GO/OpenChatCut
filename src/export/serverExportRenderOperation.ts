@@ -1,4 +1,5 @@
 import type { ExportDestination } from './exportDestination';
+import { exportMediaExtension } from './exportMediaExtension';
 import {
   exportFailureFrom,
   ExportFailureError,
@@ -51,7 +52,7 @@ function recoveryRecord(
   codec: ExportCodec,
 ): PersistedServerExportJob {
   const projectId = context.options.projectId;
-  const ext = format === 'audio' ? 'mp3' : codec === 'vp8' ? 'webm' : codec === 'prores' ? 'mov' : 'mp4';
+  const ext = exportMediaExtension(format, codec);
   const now = Date.now();
   return {
     version: 1,
@@ -181,21 +182,27 @@ function activePhase(snapshot: ExportJobSnapshot): ExportPhase {
   return snapshot.phase === 'rendering' ? 'rendering' : 'preparing';
 }
 
-function updateActiveProgress(context: ServerExportContext, snapshot: ExportJobSnapshot): void {
+type ServerExportPollContext = Pick<ServerExportContext, 'setProgress' | 't'>;
+
+function updateActiveProgress(context: ServerExportPollContext, snapshot: ExportJobSnapshot): void {
   context.setProgress((current) => current ? {
     ...current,
     phase: activePhase(snapshot),
     percent: Math.min(99, Math.max(current.percent, Math.round(snapshot.progress))),
     processedFrames: snapshot.processedFrames,
     totalFrames: snapshot.totalFrames,
+    detail: snapshot.phase === 'queued'
+      ? context.t('已有其他导出任务正在运行，当前任务将在其完成后自动开始')
+      : current.phase === 'queued' ? undefined : current.detail,
   } : current);
 }
 
-function completeSnapshot(context: ServerExportContext, snapshot: ExportJobSnapshot): ExportJobResult {
+function completeSnapshot(context: ServerExportPollContext, snapshot: ExportJobSnapshot): ExportJobResult {
   if (!snapshot.result?.path) throw new Error(context.t('导出完成，但没有可下载的文件'));
   context.setProgress((current) => current ? {
     ...current,
     phase: 'finalizing',
+    detail: current.phase === 'queued' ? undefined : current.detail,
     percent: 99,
     processedFrames: snapshot.processedFrames,
     totalFrames: snapshot.totalFrames,
@@ -204,7 +211,7 @@ function completeSnapshot(context: ServerExportContext, snapshot: ExportJobSnaps
 }
 
 export async function pollExport(
-  context: ServerExportContext,
+  context: ServerExportPollContext,
   renderId: string,
   signal?: AbortSignal,
 ): Promise<ExportJobResult> {
@@ -222,7 +229,7 @@ export async function pollExport(
   }
 }
 
-async function deleteExportJob(renderId: string): Promise<void> {
+export async function deleteExportJob(renderId: string): Promise<void> {
   const response = await fetch(`/export/job/${encodeURIComponent(renderId)}`, { method: 'DELETE' });
   if (!response.ok && response.status !== 404) {
     throw new Error(`server export cleanup failed (${response.status})`);

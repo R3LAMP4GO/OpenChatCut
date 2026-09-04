@@ -33,7 +33,6 @@ export default {
   '在线图库': 'Stock Media',
   '转写 / 口播剪辑': 'Transcription / Script Editing',
   '存储': 'Storage',
-  '媒体存储': 'Media Storage',
   '增强工具': 'Power Tools',
   '沙箱执行': 'Sandbox Execution',
   '网页抓取': 'Web Scraping',
@@ -90,7 +89,6 @@ export default {
   '音色资源 ID': 'Voice resource ID',
   '视频模型': 'Video model',
   '音乐模型': 'Music model',
-  '素材保存目录': 'Media storage directory',
   '云同步': 'Cloud sync',
   'Bucket 名': 'Bucket name',
   '模板 ID（可选）': 'Template ID (optional)',
@@ -115,11 +113,13 @@ export default {
   'Cartesia（云端）': 'Cartesia (cloud)',
   '中文（zh）': 'Chinese (zh)',
   '英语（en）': 'English (en)',
+  '意大利语（it）': 'Italian (it)',
   '日语（ja）': 'Japanese (ja)',
   '韩语（ko）': 'Korean (ko)',
   '西班牙语（es）': 'Spanish (es)',
   '法语（fr）': 'French (fr)',
   '德语（de）': 'German (de)',
+  '俄语（ru）': 'Russian (ru)',
   '启用': 'On',
   '停用': 'Off',
   '本地模型（whisper）': 'Local model (Whisper)',
@@ -141,16 +141,37 @@ export default {
   '填写完整 API 前缀（可含 /v1、/v1beta/openai 等路径）；切换厂商会重置地址与模型，并立即生效。': 'Enter the full API prefix, including paths such as /v1 or /v1beta/openai. Switching providers resets the Base URL and model and takes effect immediately.',
   '默认值仅对内置模型准确；自定义、OpenRouter 或本地模型请填写模型实际上限（4,096–4,000,000）。':
     'The default is exact only for the built-in model. For custom, OpenRouter, or local models, enter the model’s actual limit (4,096–4,000,000).',
-  '桌面端默认把素材存入系统应用数据目录，浏览器开发版默认使用 public/media/uploads/。可选择任意本机目录或外置硬盘；保存后旧目录中的素材会复制到新目录（原文件保留），工程里的素材地址不变，预览与渲染导出都会跟随新目录。':
-    'The desktop app stores media in its system application-data directory by default; browser development uses public/media/uploads/. Choose any local folder or external drive. Saving copies media from the old directory to the new one (originals kept); project URLs stay unchanged, and preview, render, and export follow the new directory.',
-  '桌面端点击“选择目录”；浏览器中也可手动输入绝对路径。清除后回到当前运行环境的默认目录。':
-    'On desktop, click “Choose Folder”; in a browser, you can also enter an absolute path manually. Clearing returns to the current environment’s default directory.',
   '未配置时素材只存本机（「本地磁盘」页的目录）。配置后：每次上传同步写入 R2（桶保持私有，读取经本地服务回源，src 路径不变）；本机缺文件时自动从云端取回。改动即时生效。R2 控制台建桶 → R2 API Token（Object Read & Write）即可拿到下面四个值。':
     'Without this, media lives only on this machine (the Local Disk directory). Once configured: every upload also writes to R2 (bucket stays private, reads go through the local server, src paths unchanged); missing local files are fetched from the cloud automatically. Changes apply immediately. Create a bucket in the R2 console, then an R2 API Token (Object Read & Write) to get the four values below.',
   '停用后新上传只存本地（密钥保留、已上云文件不受影响）；重新启用即恢复写穿。': 'When off, new uploads stay local only (keys kept, files already in the cloud unaffected); re-enable to resume write-through.',
   '云端隔离 Linux 沙箱，不触碰本机文件。Agent 用它跑 run_code：ffprobe 探测素材时长 / 尺寸编码、ffmpeg 转码 / 抽帧 / 加工音视频、执行 node / python 技能脚本，结果回传后由本地工具应用到时间线。未配置只影响这些工具，剪辑与预览不受影响。':
     'An isolated Linux sandbox in the cloud — never touches local files. The Agent uses it for run_code: ffprobe to probe media duration / dimensions / codecs, ffmpeg to transcode / extract frames / process AV, and node / python skill scripts; results come back and local tools apply them to the timeline. Leaving it unset only affects these tools — editing and preview are unaffected.',
   '默认模板不带 ffmpeg；转码 / 抽帧类任务需自建含 ffmpeg 的模板并填其 ID。': 'The default template has no ffmpeg; for transcode / frame-extraction tasks, build a template with ffmpeg and enter its ID.',
+  '素材进入媒体池后是否立即转写。本地 Whisper 免费且在本机运行；云端付费供应商建议保持关闭或手动转写。':
+    'Whether media should be transcribed as soon as it enters the media pool. Local Whisper is free and runs on this machine; paid cloud providers are best kept off or used manually.',
+  '导入后自动转写': 'Auto-transcribe after import',
+  '关闭（手动转写）': 'Off (manual transcription)',
+  '仅本地引擎（免费）': 'Local engine only (free)',
+  '全部引擎（含云端付费）': 'All engines (including paid cloud)',
+  'BytePlus ModelArk 同一个 Key，图生 / 视频生成通用；与「Agent 大脑」的 BytePlus 配置各自独立。':
+    'One BytePlus ModelArk key covers image and video generation; it is separate from the BytePlus configuration under Agent Brain.',
+  '国内网络访问海外模型（Gemini / OpenAI / Anthropic / Mistral 等）失败时，可在此填写本地代理地址（如 http://127.0.0.1:7890）。留空则使用系统环境变量（HTTPS_PROXY / HTTP_PROXY）。生效范围：Agent 模型、AI 生成、模型下载、R2 云同步。':
+    'If your network cannot reach overseas model APIs (Gemini / OpenAI / Anthropic / Mistral, etc.), enter a local proxy URL here, such as http://127.0.0.1:7890. Leave empty to use system environment variables (HTTPS_PROXY / HTTP_PROXY). Applies to Agent models, AI generation, model downloads, and R2 cloud sync.',
+  '统一配置服务端访问海外 API 使用的代理地址。': 'Configure the proxy URL used by the server to access overseas APIs.',
+  '网络代理': 'Network proxy',
+  '界面': 'Interface',
+  '界面缩放与显示相关设置。': 'Interface scale and display settings.',
+  '界面缩放': 'Interface scale',
+  '调整整个编辑器的缩放比例（80%–150%）。桌面版保存后立即生效，也可用 Ctrl/Cmd + +/- 快速调整、Ctrl/Cmd + 0 复位。浏览器版请使用浏览器自带缩放。':
+    'Adjust the entire editor scale (80%–150%). Desktop changes apply immediately after saving; Ctrl/Cmd + +/- adjusts quickly, and Ctrl/Cmd + 0 resets. In the browser, use the browser zoom controls.',
+  '本地模型': 'Local models',
+  '本地转写、节拍与音乐分析、画面语义搜索。模型按需安装，数据不出本机。':
+    'Local transcription, beat/music analysis, and visual semantic search. Models are installed on demand and data stays on this machine.',
+  '默认 https://api.fish.audio': 'Default https://api.fish.audio',
+  '默认 https://api.inworld.ai': 'Default https://api.inworld.ai',
+  '默认 https://api.sws.speechify.com': 'Default https://api.sws.speechify.com',
+  '默认 https://api.wavespeed.ai': 'Default https://api.wavespeed.ai',
+  '默认 https://ark.ap-southeast.bytepluses.com/api/v3': 'Default https://ark.ap-southeast.bytepluses.com/api/v3',
 
 
   // ── OpenAI Codex account ──
@@ -224,9 +245,26 @@ export default {
   '测试连接': 'Test connection',
   '测试代理连接': 'Test proxy connection',
   '测试并读取模型': 'Test & load models',
+  '会话有效期至': 'Session valid until',
+  '导入登录状态': 'Import login',
+  '重新导入': 'Re-import',
+  '注销': 'Sign out',
+  '请先在终端运行官方 Grok CLI 登录，再回到这里导入登录状态：':
+    'Sign in with the official Grok CLI in a terminal first, then import the login here:',
+  '订阅（SuperGrok 或 X Premium+）登录成功后，grok login 会把会话写入本机。':
+    'After signing in with your subscription (SuperGrok or X Premium+), grok login stores the session locally.',
+  '使用 SuperGrok 或 X Premium+ 订阅登录：官方 Grok CLI 管理登录与凭据（终端运行 grok login），OpenChatCut 导入会话并自动续期，不会读取或显示 OAuth 凭据。':
+    'Sign in with your SuperGrok or X Premium+ subscription: the official Grok CLI owns login and credentials (run grok login in a terminal); OpenChatCut imports the session and refreshes it automatically, and never reads or displays OAuth credentials.',
+  'xAI · Grok (订阅登录)': 'xAI · Grok (Subscription sign-in)',
+  '使用 xAI 订阅会话（SuperGrok / X Premium+，优先）或 LLM_XAI_API_KEY 生成图片。文生图：最多 4 张，1K / 2K。':
+    'Generates images with your xAI subscription session (SuperGrok / X Premium+, preferred) or LLM_XAI_API_KEY. Text-to-image: up to 4 images, 1K / 2K.',
+  '使用 xAI 订阅会话（SuperGrok / X Premium+，优先）或 LLM_XAI_API_KEY 生成视频。文生视频：1–15 秒，自带音轨，480p / 720p / 1080p。':
+    'Generates videos with your xAI subscription session (SuperGrok / X Premium+, preferred) or LLM_XAI_API_KEY. Text-to-video: 1–15s, audio track included, 480p / 720p / 1080p.',
+  'xAI · Grok Imagine (视频)': 'xAI · Grok Imagine (Video)',
   '验证地址与密钥，并读取该接口可用的模型': 'Verifies the endpoint and key, then loads the models available from that API',
   '选择模型': 'Choose model',
   '测试请求失败 ({n})': 'Test request failed ({n})',
+  '该厂商暂不支持连接测试': 'This provider does not support connection testing yet',
   '（按当前输入测试，记得保存）': ' (tested with current input — remember to save)',
   '发一条最小请求验证 Key 与地址可用': 'Sends one minimal request to verify the key and endpoint',
   '使用当前代理地址访问外网探测端点': 'Uses the current proxy address to reach an external connectivity endpoint',
@@ -244,6 +282,9 @@ export default {
   '已自定义 · 留空保持不变': 'Customized · Leave empty to keep',
   '已配置 · 留空保持不变': 'Configured · Leave empty to keep',
   '未配置 · 粘贴以启用': 'Not configured · Paste to enable',
+  'API Key（可选）': 'API Key (optional)',
+  '代理地址': 'Proxy URL',
+  '例如 http://127.0.0.1:7890': 'Example: http://127.0.0.1:7890',
   '系统默认素材目录': 'system default media directory',
   '选择目录': 'Choose Folder',
   '选择中…': 'Choosing…',
@@ -345,6 +386,21 @@ export default {
   '删除所选': 'Delete selected',
   // External Agent Access Guide (McpGuide)
   '外部 Agent 接入 (MCP)': 'External agents (MCP)',
+  'Streamable HTTP · 与内置 Agent 共享编辑工具': 'Streamable HTTP · shares the editing tools with the built-in Agent',
+  '所有客户端共用一个端点': 'One endpoint shared by every client',
+  'Anthropic 官方 CLI，Claude 订阅用户直连。': 'Official Anthropic CLI, for Claude subscribers.',
+  'OpenAI CLI，通过环境变量携带令牌。': 'Official OpenAI CLI, carries the token via environment variable.',
+  '写入 ~/.cursor/mcp.json 的全局配置。': 'Writes a global config to ~/.cursor/mcp.json.',
+  '写入 ~/.gemini/antigravity/mcp_config.json。': 'Writes a global config to ~/.gemini/antigravity/mcp_config.json.',
+  '连接': 'Connect',
+  '连接中…': 'Connecting…',
+  '已连接': 'Connected',
+  '连接失败': 'Connect failed',
+  '已写入 {paths}': 'Wrote {paths}',
+  '连接后重启对应客户端生效；Codex 需新开终端使环境变量生效。': 'Restart the client after connecting; Codex needs a new terminal for the env var.',
+  '目标配置文件不是有效 JSON，为避免覆盖未写入。': 'Target config file is not valid JSON; nothing was written to avoid overwriting it.',
+  '写入配置文件失败。': 'Failed to write the config file.',
+  '执行 codex mcp add 失败。': 'Running codex mcp add failed.',
   'OpenChatCut 暴露一个 Streamable HTTP MCP 端点。Claude Code / Codex / Cursor 等外部 Agent 接入后,与内置 Agent 共用同一套编辑工具,可直接读写当前工程。':
     'OpenChatCut exposes a Streamable HTTP MCP endpoint. External agents such as Claude Code, Codex, and Cursor share the same editing tools as the built-in agent and can read and edit the current project directly.',
   '端点地址': 'Endpoint',
@@ -423,6 +479,7 @@ export default {
   'Whisper Base（约 80MB · 均衡）': 'Whisper Base (~80MB · balanced)',
   'Whisper Small（约 250MB · 推荐）': 'Whisper Small (~250MB · recommended)',
   'Whisper Medium（约 1.1GB · 精度最高）': 'Whisper Medium (~1.1GB · highest accuracy)',
+  'Whisper Large v3 Turbo（约 1.1GB · 多语言最强）': 'Whisper Large v3 Turbo (~1.1GB · best multilingual)',
   // Downloadable music intelligence model packs
   '本地智能模型': 'Local intelligence models',
   '模型不会自动安装。安装后，节拍与音乐语义分析只在本机运行。':
@@ -486,10 +543,14 @@ export default {
   '确认清理': 'Confirm cleanup',
   '清理中…': 'Cleaning up…',
   '已清理 {removed} 个旧 JSON 文件': 'Removed {removed} old JSON files',
-  '工程存储目录': 'Project storage folder',
+  '默认工程位置': 'Default project location',
   '应用默认数据目录': 'Default app data folder',
-  '工程与素材的本地保存目录，与可选的 R2 云备份。': 'Where projects and media are stored locally, plus optional R2 cloud backup.',
-  '工程、历史版本与素材的存放位置。默认放在应用数据目录里；改到你自己的目录（外置硬盘、同步盘）后，卸载或重装应用都不会动到作品。保存时会把现有数据复制到新目录（原目录保留不删），重启应用后生效。': 'Where projects, version history and media are kept. Defaults to the app data folder; point it at a folder of your own (external drive, synced folder) and uninstalling or reinstalling the app never touches your work. Saving copies the existing data to the new folder (the old one is kept, not deleted); takes effect after a restart.',
+  '新工程和生成素材的默认保存位置，以及可选的 R2 云备份。':
+    'The default location for new projects and generated media, plus optional R2 cloud backup.',
+  '新建工程、历史版本和应用生成的素材保存在这里。桌面端从外部拖入的文件和文件夹保留在原位置，工程只建立引用；浏览器运行时会上传托管副本。修改后重启应用生效。':
+    'New projects, version history, and app-generated media are stored here. In the desktop app, external files and folders stay in place and are referenced; browser sessions upload a managed copy. Changes take effect after restarting the app.',
+  '未配置时素材只存本机。配置后：每次上传同步写入 R2（桶保持私有，读取经本地服务回源，src 路径不变）；本机缺文件时自动从云端取回。改动即时生效。R2 控制台建桶 → R2 API Token（Object Read & Write）即可拿到下面四个值。':
+    'Without this, media stays on this machine. Once configured, uploads are also written to R2; missing local files are restored through the local service while source URLs stay unchanged. Changes apply immediately. Create a bucket and an Object Read & Write API token in R2 to get the four values below.',
   '桌面端点击“选择目录”；也可手动输入绝对路径（可用 ~/ 开头）。清除后回到默认目录。': 'On desktop, click "Choose folder"; you can also type an absolute path (~/ accepted). Clear it to return to the default folder.',
   '已保存 · 重启应用后新的工程存储目录才会生效': 'Saved · the new project storage folder takes effect after a restart',
   '该模型不在内置目录，以上数值为估算（上下文 {context} / 输出 {output}）。若与实际不符，点「展开」手动修改。': 'This model is not in the built-in catalog, so these values are estimates (context {context} / output {output}). If they do not match the real model, expand and adjust them manually.',

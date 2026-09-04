@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { ToolResultPart } from 'ai';
 import {
-  loadChat,
+  loadChatResult,
   saveChat,
   type PersistedChat,
 } from '../persist/projectStore';
@@ -46,6 +46,7 @@ import {
 } from '../persist/agentRuntimeStore';
 import type { AgentHookState } from './useAgentState';
 import type { LLMMessage } from './runtime';
+import { showAppToast } from '../ui/appToast';
 
 export async function recordProposalOutcome(
   projectId: string,
@@ -175,11 +176,13 @@ export async function loadRecoveredAgentSession(
 ) {
   const generation = await currentAgentSessionGeneration(projectId);
   adoptAgentSessionWriteGeneration(projectId, generation);
-  const [record, external, saved] = await Promise.all([
+  const [record, external, chatResult] = await Promise.all([
     loadProposalRecord(projectId),
     loadExternalProposal(projectId),
-    loadChat(projectId),
+    loadChatResult(projectId),
   ]);
+  const saved = chatResult.status === 'ok' ? chatResult.chat : null;
+  const chatUnreadable = chatResult.status === 'unreadable';
   if (!alive() || await currentAgentSessionGeneration(projectId) !== generation) return null;
   const externalRunIds = externalProposalRunIds(external);
   const preservedRunIds = preservedProposalRunIds(record, external);
@@ -231,7 +234,7 @@ export async function loadRecoveredAgentSession(
     });
   }
   if (!alive() || await currentAgentSessionGeneration(projectId) !== generation) return null;
-  return { saved, pending, generation };
+  return { saved, pending, generation, chatUnreadable };
 }
 
 function persistedContextUsage(value: unknown): AgentContextUsage | null {
@@ -260,7 +263,18 @@ export async function hydrateAgentSession(
     state.ctxRef.current.getDoc(),
   );
   if (!loaded || !alive()) return;
-  const { saved, pending } = loaded;
+  const { saved, pending, chatUnreadable } = loaded;
+  if (chatUnreadable) {
+    // A stored conversation exists but could not be read. Hydrating an empty
+    // session would let the next persist overwrite it, so stop here: leave
+    // hydratedRef/hydrated false (which gates both persistence and new runs)
+    // and surface the reason instead of silently showing an empty chat.
+    state.setMessages([{
+      role: 'error',
+      text: '聊天记录暂时无法读取，已停止加载以避免覆盖已保存的对话。请刷新页面重试。',
+    }]);
+    return;
+  }
   state.setMessages(saved ? ensureAgentRetryMetadata(saved.messages as DisplayMessage[]) : []);
   state.setChangeLog(parseAgentChangeLog(saved?.changeLog));
   if (saved) {
@@ -451,10 +465,21 @@ export function agentSessionSnapshot(
   };
 }
 
+// Surface chat-write failures once per failing streak, the same way project
+// saves do. Silently console.error'ing meant a user could talk for an hour,
+// refresh, and find the conversation gone with no prior warning.
+let chatSaveFailureShown = false;
+
 function persistAgentSession(state: AgentHookState, projectId: string): void {
-  void saveChat(projectId, agentSessionSnapshot(state)).catch((error) => {
-    console.error('[agent] chat persistence failed:', error);
-  });
+  void saveChat(projectId, agentSessionSnapshot(state)).then(
+    () => { chatSaveFailureShown = false; },
+    (error: unknown) => {
+      console.error('[agent] chat persistence failed:', error);
+      if (chatSaveFailureShown) return;
+      chatSaveFailureShown = true;
+      showAppToast('聊天记录保存失败，本次对话可能不会被保留。请检查存储后重试。', { error: true });
+    },
+  );
 }
 
 export function useAgentPersistence(

@@ -79,7 +79,7 @@ export function MediaPoolPanel({
   const t = useT();
   const musicAnalysis = useMusicAnalysisCards(assets);
   const [error, setError] = useState<string | null>(null);
-  const fileImport = useMediaPoolFileImport({ onImport, onMoveAssets, setError, t });
+  const fileImport = useMediaPoolFileImport({ onImport, onMoveAssets, onCreateFolder, setError, t });
   const {
     inputRef, busy, setBusy, uploadRatio, canPickDirectory,
     pickFiles, pickDirectory, handleDrop,
@@ -349,8 +349,8 @@ export function MediaPoolPanel({
         });
       }}
     >
-      <input ref={inputRef} type="file" accept="video/*,image/*,audio/*,.gif,.svg,image/gif,image/svg+xml" multiple hidden onChange={(event) => void pickFiles(event.target.files, currentFolderId)} />
-      <input ref={relinkInputRef} type="file" accept="video/*,image/*,audio/*,.gif,.svg,image/gif,image/svg+xml" hidden onChange={(event) => void pickRelinkFile(event.target.files)} />
+      <input ref={inputRef} type="file" multiple hidden onChange={(event) => void pickFiles(event.target.files, currentFolderId)} />
+      <input ref={relinkInputRef} type="file" hidden onChange={(event) => void pickRelinkFile(event.target.files)} />
       <MediaPoolToolbar
         scopeId={semanticScopeId}
         assets={assets}
@@ -408,7 +408,7 @@ export function MediaPoolPanel({
         canRelink={!!onRelinkAsset}
         onOpenFolder={openFolder}
         onOpenParent={openParent}
-        onDropFiles={(files, folderId) => void pickFiles(files, folderId)}
+        onDropTransfer={(transfer, folderId) => void handleDrop(transfer, folderId)}
         onMoveAsset={(id, folderId) => onMoveAssets([id], folderId)}
         onMoveAssets={(ids, folderId) => onMoveAssets(ids, folderId)}
         onOpenFavorites={openFavorites}

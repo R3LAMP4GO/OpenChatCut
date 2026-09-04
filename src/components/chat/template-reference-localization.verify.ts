@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 import { createElement, createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createServer } from 'vite';
-import { tData } from '../../i18n/locale.ts';
+import { ensureLocaleDict, setLocale, tData } from '../../i18n/locale.ts';
 import { TEMPLATES } from '../../editor/initial.ts';
 import type { RefItem } from './ChatComposer.tsx';
 
+setLocale('zh');
+// Dictionaries are fetched per locale (see i18n/dictRegistry.ts); tData() only
+// resolves once the active one has landed, exactly as main.tsx awaits at boot.
+await ensureLocaleDict('zh');
 for (const template of TEMPLATES) {
   assert.equal(
     /[\u3400-\u9fff]/.test(tData(template.name)),

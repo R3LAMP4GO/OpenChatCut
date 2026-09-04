@@ -1,5 +1,6 @@
 import './chdir-first.ts';
-import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -28,9 +29,13 @@ import { installDesktopInferenceIpc } from './native-inference-ipc.ts';
 import { installParakeetIpc } from './parakeet-ipc.ts';
 import { detectDesktopHardwareProfile } from './native-hardware-profile.ts';
 import { installDirectoryWatchIpc } from './directory-watch-ipc.ts';
-import { importAgentPaths } from './agent-path-import.ts';
+import {
+  AGENT_IMPORT_ROOTS_KEY,
+  importAgentPathsWithGrant,
+} from './agent-path-import.ts';
 import { getKey, setKeys } from '../server/keystore.ts';
 import { AGENT_PATH_IMPORT_CHANNEL } from '../shared/directory-import.ts';
+import { modelCachePath } from '../shared/model-cache-path.ts';
 import { isTranscriptWindowPayload, TRANSCRIPT_WINDOW_CHANNELS, type TranscriptWindowPayload } from '../shared/transcript-window.ts';
 import {
   assertTrustedDesktopSenderUrl,
@@ -58,6 +63,11 @@ import {
 } from './export-directory-state.ts';
 import { runDesktopSmokeProbe } from './smoke-probe.ts';
 import { runtimeProfile } from '../server/runtime-profile.ts';
+import {
+  applyWindowsGpuCrashFallback,
+  installWindowsGpuCrashRecovery,
+  installWindowsRendererRecovery,
+} from './window-recovery.ts';
 
 // Electron main process entry. dev mode: esbuild hits desktop-dist/main.mjs,dist/ in the codebase root;
 // Packaging form: dist/, resonance-bundle, chrome-headless-shell use extraResources.
@@ -95,6 +105,16 @@ function handOffExternalUrl(decision: DesktopPageUrlDecision): void {
   void shell.openExternal(decision.url).catch((error: unknown) => {
     console.error('[desktop] failed to open external URL:', error);
   });
+}
+
+function agentImportPickerDefaultPath(requestedPath: string): string {
+  try {
+    return existsSync(requestedPath) && statSync(requestedPath).isDirectory()
+      ? requestedPath
+      : dirname(requestedPath);
+  } catch {
+    return dirname(requestedPath);
+  }
 }
 
 function installDesktopPageGuards(win: BrowserWindow, trustedOrigin: string): void {
@@ -201,7 +221,9 @@ function registerDesktopHandlers(trustedOrigin: string): void {
     return createTransparentMovProxy(storedName);
   }));
   let transcriptWindow: BrowserWindow | null = null;
+  let transcriptPayload: TranscriptWindowPayload | null = null;
   const openTranscriptWindow = (payload: TranscriptWindowPayload): void => {
+    transcriptPayload = payload;
     if (transcriptWindow && !transcriptWindow.isDestroyed()) {
       transcriptWindow.webContents.send(TRANSCRIPT_WINDOW_CHANNELS.update, payload);
       transcriptWindow.show();
@@ -228,16 +250,27 @@ function registerDesktopHandlers(trustedOrigin: string): void {
       },
     });
     transcriptWindow = win;
+    const uninstallRendererRecovery = installWindowsRendererRecovery(win);
     win.once('closed', () => {
-      if (transcriptWindow === win) transcriptWindow = null;
+      uninstallRendererRecovery();
+      if (transcriptWindow === win) {
+        transcriptWindow = null;
+        transcriptPayload = null;
+      }
     });
     installDesktopPageGuards(win, trustedOrigin);
-    void win.loadURL(`${trustedOrigin}/?transcript-window=1`).then(() => {
-      if (win.isDestroyed()) return;
-      win.webContents.send(TRANSCRIPT_WINDOW_CHANNELS.update, payload);
+    win.webContents.on('did-finish-load', () => {
+      if (win.isDestroyed() || !transcriptPayload) return;
+      win.webContents.send(TRANSCRIPT_WINDOW_CHANNELS.update, transcriptPayload);
       win.show();
     });
+    void win.loadURL(`${trustedOrigin}/?transcript-window=1`);
   };
+  // Pull path for the floating window: the did-finish-load push races the
+  // page's IPC subscription (React mounts after locale/chunk loads), and a
+  // lost push left the window permanently blank — the v0.2.12 Windows smoke
+  // caught it as "transcript payload timed out".
+  ipcMain.handle(TRANSCRIPT_WINDOW_CHANNELS.request, trustedDesktopHandler(trustedOrigin, () => transcriptPayload));
   ipcMain.handle(TRANSCRIPT_WINDOW_CHANNELS.open, trustedDesktopHandler(trustedOrigin, (_event, value: unknown) => {
     if (!isTranscriptWindowPayload(value)) throw new Error('invalid transcript window payload');
     openTranscriptWindow(value);
@@ -314,7 +347,7 @@ async function boot(): Promise<void> {
     }),
   });
   installDirectoryWatchIpc(origin);
-  ipcMain.handle(AGENT_PATH_IMPORT_CHANNEL, trustedDesktopHandler(origin, async (_event, request: unknown) => {
+  ipcMain.handle(AGENT_PATH_IMPORT_CHANNEL, trustedDesktopHandler(origin, async (event, request: unknown) => {
     const value = request as { paths?: unknown; projectId?: unknown; knownHashes?: unknown };
     const paths = Array.isArray(value?.paths)
       ? value.paths.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0 && entry.length < 4096)
@@ -325,12 +358,27 @@ async function boot(): Promise<void> {
     if (!paths.length || typeof value?.projectId !== 'string') {
       throw new Error('invalid agent path import request');
     }
-    return importAgentPaths({ paths, projectId: value.projectId, knownHashes });
+    return importAgentPathsWithGrant({ paths, projectId: value.projectId, knownHashes }, {
+      chooseRoot: async (requestedPath) => {
+        const parent = BrowserWindow.fromWebContents(event.sender);
+        const options: OpenDialogOptions = {
+          title: '选择允许 Agent 访问的素材文件夹',
+          defaultPath: agentImportPickerDefaultPath(requestedPath),
+          properties: ['openDirectory'],
+        };
+        const selected = parent
+          ? await dialog.showOpenDialog(parent, options)
+          : await dialog.showOpenDialog(options);
+        return selected.canceled ? null : (selected.filePaths[0] ?? null);
+      },
+      readRoots: () => getKey(AGENT_IMPORT_ROOTS_KEY as never),
+      writeRoots: (roots) => setKeys({ [AGENT_IMPORT_ROOTS_KEY]: roots }),
+    });
   }));
   const hardware = await detectDesktopHardwareProfile(app);
   const desktopInference = installDesktopInferenceIpc(
     origin,
-    join(app.getPath('home'), '.openchatcut', 'asr-models'),
+    modelCachePath(app.getPath('home')),
     hardware,
   );
   const parakeet = installParakeetIpc(origin);
@@ -358,8 +406,10 @@ async function boot(): Promise<void> {
   });
   applyDesktopWindowFrame(win);
   installResponsiveWindowScale(win);
+  const uninstallRendererRecovery = installWindowsRendererRecovery(win);
   mainWindow = win;
   win.once('closed', () => {
+    uninstallRendererRecovery();
     mainWindow = null;
   });
   installDesktopPageGuards(win, origin);
@@ -373,8 +423,34 @@ async function boot(): Promise<void> {
   if (SMOKE) {
     await runDesktopSmokeProbe(origin, win, SMOKE_RENDER);
     console.log('SMOKE-OK');
-    app.exit(0);
+    exitSmoke(0);
   }
+}
+
+/**
+ * On Windows, after forced renderer crashes, BOTH in-process exits have been
+ * observed to wedge: app.exit() (v0.2.12 CI run 3) and even process.exit
+ * following it (same run — the process survived to the external 420s kill).
+ * So: arm an EXTERNAL kill on failure codes first, then process.exit
+ * directly — app.exit posts through Chromium's message loop, which is
+ * exactly the thing that deadlocks, and a smoke process has nothing worth a
+ * graceful quit. The CI step treats a printed SMOKE-OK as the pass signal,
+ * so a post-success wedge cannot fail the build.
+ */
+function exitSmoke(code: number): void {
+  // Failure only: taskkill terminates with its own nonzero status, which
+  // must never be able to turn a SMOKE-OK exit 0 into a failure.
+  if (code !== 0 && process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/T', '/F', '/PID', String(process.pid)], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref();
+    } catch {
+      // process.exit below remains the only path.
+    }
+  }
+  process.exit(code);
 }
 
 app.on('window-all-closed', () => app.quit());
@@ -383,21 +459,52 @@ const hasSingleInstanceLock = requestProfileScopedSingleInstanceLock(app, runtim
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
+  applyWindowsGpuCrashFallback(app);
+  installWindowsGpuCrashRecovery(app, () => BrowserWindow.getAllWindows());
   app.on('second-instance', () => {
     if (mainWindow) focusExistingWindow(mainWindow);
   });
 }
 
 if (SMOKE) {
+  // No .unref(): in the Electron main process an unref'd timer is not
+  // guaranteed to ever fire — Node's loop is polled through Chromium's message
+  // pump, and with no ref'd handles the poll can starve. The v0.2.12 Windows
+  // smoke hung for 105 minutes on a 240s watchdog that never fired. A ref'd
+  // timer does not block app.exit(0) on the success path, so there is nothing
+  // to unref for.
   setTimeout(() => {
-    console.error('smoke timed out');
-    app.exit(2);
-  }, SMOKE_TIMEOUT_MS).unref();
+    console.error(`smoke timed out after ${SMOKE_TIMEOUT_MS}ms`);
+    exitSmoke(2);
+  }, SMOKE_TIMEOUT_MS);
+  // Pre-armed EXTERNAL watchdog: the Windows main process has wedged so hard
+  // during smoke (crashed-renderer teardown) that timers, microtasks, and
+  // both in-process exits all stopped — the setTimeout above never even
+  // logged. A detached helper is immune to that. On a clean exit our PID is
+  // gone before the helper fires and the kill is a no-op; CI reaps the
+  // helper as an orphan.
+  if (process.platform === 'win32') {
+    try {
+      const graceSeconds = Math.ceil(SMOKE_TIMEOUT_MS / 1000) + 60;
+      const helper = spawn('powershell.exe', [
+        '-NoProfile',
+        '-Command',
+        `Start-Sleep -Seconds ${graceSeconds}; taskkill /T /F /PID ${process.pid}`,
+      ], { detached: true, stdio: 'ignore' });
+      helper.unref();
+      // The pid line is diagnostic: run 6's helper never fired and this says
+      // whether it even spawned.
+      console.log(`[smoke] external watchdog armed: helper pid ${helper.pid ?? 'SPAWN FAILED'}, fires in ${graceSeconds}s`);
+    } catch (error) {
+      console.error('[smoke] external watchdog spawn failed:', error instanceof Error ? error.message : String(error));
+    }
+  }
 }
 
 if (hasSingleInstanceLock) {
   boot().catch((err) => {
     console.error('[desktop] boot failed:', err instanceof Error ? err.stack ?? err.message : err);
-    app.exit(1);
+    if (SMOKE) exitSmoke(1);
+    else app.exit(1);
   });
 }

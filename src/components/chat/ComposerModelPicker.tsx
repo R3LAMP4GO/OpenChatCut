@@ -4,6 +4,19 @@ import { selectAgentModel } from '../../agent/model-selection';
 import { Icon } from '../icons';
 import { ComposerPopover } from './ComposerPopover';
 import type { ComposerModelView } from './useComposerModelView';
+import codexPng from '../../../assets/vendor-icons/codex-color.png';
+
+function ChoiceLogo({ backend }: { backend: 'api' | 'codex' }) {
+  if (backend !== 'codex') return null;
+  return (
+    <img
+      src={codexPng}
+      alt=""
+      aria-hidden
+      style={{ width: 18, height: 18, borderRadius: 5, objectFit: 'contain', flex: '0 0 auto', background: theme.panel, border: `0.5px solid ${theme.borderLight}` }}
+    />
+  );
+}
 
 export function ComposerModelPicker({ anchor, onClose, view }: {
   readonly anchor: HTMLElement | null;
@@ -28,6 +41,7 @@ export function ComposerModelPicker({ anchor, onClose, view }: {
           <button type="button" key={choice.id}
             onClick={() => { selectAgentModel(choice.id); onClose(); }}
             style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '7px 9px', border: 0, borderRadius: 3, background: active ? theme.panel : 'transparent', color: theme.text, cursor: 'pointer', textAlign: 'left' }}>
+            <ChoiceLogo backend={choice.backend} />
             <span style={{ flex: 1, minWidth: 0 }}>
               <strong style={{ display: 'block', fontSize: 11.5, fontWeight: 600 }}>{choice.providerLabel}</strong>
               <small style={{ display: 'block', color: theme.textDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{choice.model}</small>

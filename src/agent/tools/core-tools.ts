@@ -6,6 +6,7 @@ import { prepareTemplate } from '../../template-host';
 import { generateAgentText } from '../client';
 import { designStyleHint } from '../systemPrompt';
 import { execCoreDataTool } from './core-data-tools';
+import { execJianyingExport } from './jianying-export-tool';
 
 type Args = Record<string, unknown>;
 
@@ -84,16 +85,30 @@ Contract (MUST follow exactly):
   return result.trim().replace(/^\s*```[a-zA-Z]*\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
 }
 
+// Upper bounds mirror the tool schemas. The preview allocates a canvas and a
+// frame loop from these values, so an unbounded width or duration from the
+// model freezes the tab — clamp here too rather than trusting schema alone.
+const MAX_MG_DIMENSION = 8192;
+const MAX_MG_FRAMES = 36_000;
+
 function generatedAsset(args: Args, code: string, ctx: AgentContext): MediaAsset {
   const fps = ctx.getState().fps || 30;
-  const durationInFrames = typeof args.durationInFrames === 'number' && args.durationInFrames > 0
-    ? Math.max(15, Math.round(args.durationInFrames))
-    : Math.max(15, Math.round((Number(args.durationSeconds) || 3) * fps));
+  const requestedFrames = typeof args.durationInFrames === 'number' && args.durationInFrames > 0
+    ? Math.round(args.durationInFrames)
+    : Math.round((Number(args.durationSeconds) || 3) * fps);
+  const dimension = (value: unknown, fallback: number): number => (
+    typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? Math.min(MAX_MG_DIMENSION, Math.max(16, Math.round(value)))
+      : fallback
+  );
   return {
     id: crypto.randomUUID(), name: String(args.name ?? '').trim() || 'Generated MG',
-    kind: 'motion-graphic', src: '', code, durationInFrames,
-    width: typeof args.width === 'number' && args.width > 0 ? Math.round(args.width) : 1920,
-    height: typeof args.height === 'number' && args.height > 0 ? Math.round(args.height) : 1080,
+    kind: 'motion-graphic', src: '', code,
+    durationInFrames: Number.isFinite(requestedFrames)
+      ? Math.min(MAX_MG_FRAMES, Math.max(15, requestedFrames))
+      : 15,
+    width: dimension(args.width, 1920),
+    height: dimension(args.height, 1080),
     props: {},
   };
 }
@@ -132,6 +147,8 @@ export async function execCoreTool(
   if (name === 'ToolSearch') return searchTools(args, schemas);
   const dataResult = execCoreDataTool(name, args, ctx);
   if (dataResult !== undefined) return dataResult;
+  const jianyingResult = await execJianyingExport(name, args, ctx);
+  if (jianyingResult !== undefined) return jianyingResult;
   if (name === 'list_templates' || name === 'search_templates' || name === 'add_motion_graphic') {
     return execTemplateCatalog(name, args, ctx);
   }

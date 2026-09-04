@@ -6,7 +6,6 @@
 // The current value is echoed through the models channel of GET /api/keys (server-side NON_SECRET_NAMES whitelist).
 import { t } from '../../i18n/locale';
 import {
-  LLM_PROVIDER_PRESETS,
   isLocalLlmProvider,
   llmProviderConfigNames,
 } from '../../../shared/llm-providers';
@@ -32,6 +31,7 @@ import {
   VOICE_SETTINGS_GROUP,
   localAsrPage,
 } from './settingsMediaProviders';
+import { AGENT_VENDOR_PAGES_WITH_VISION, PROXY_PAGE } from './settingsAgentProviders';
 
 export type {
   FieldKind,
@@ -44,104 +44,6 @@ export type {
   SettingsVendorPage,
 } from './settingsFields';
 
-const llmPage = (preset: (typeof LLM_PROVIDER_PRESETS)[number]): SettingsVendorPage => {
-  const names = llmProviderConfigNames(preset.id);
-  return {
-    key: `llm/${preset.id}`,
-    vendor: preset.id as VendorId,
-    title: preset.label,
-    note: preset.id === 'anthropic'
-      ? '内置 Agent 需要 Anthropic API Key。Claude Code 订阅用户请通过「外部 Agent 接入 (MCP)」连接；OpenChatCut 不接收 Claude OAuth。'
-      : '每个厂商独立保存地址、密钥与模型。先测试连接，成功后可从接口返回的模型中选择。',
-    ...(preset.id === 'anthropic'
-      ? { noteAction: { label: '外部 Agent 接入 (MCP)', action: 'open-mcp-guide' } }
-      : {}),
-    fields: [
-      {
-        name: names.baseUrl,
-        label: 'API URL',
-        kind: 'text',
-        defaultLabel: preset.baseUrl,
-        note: '填写完整 API 前缀；可使用官方地址、自建网关或兼容中转。',
-      },
-      secret(names.apiKey, isLocalLlmProvider(preset.id) ? 'API Key（可选）' : 'API Key'),
-      ...(preset.id === 'openai' ? [{
-        name: 'LLM_OPENAI_API_MODE',
-        label: '接口格式',
-        kind: 'select' as const,
-        defaultLabel: 'Responses API（推荐）',
-        note: '选择服务实际支持的协议；OpenAI 使用 Responses API，兼容服务使用 Chat Completions API。',
-        options: [{ value: 'chat', label: 'Chat Completions API' }],
-      }] : []),
-      {
-        name: names.model,
-        label: '模型',
-        kind: 'text',
-        defaultLabel: preset.defaultModel,
-        discoverableModel: true,
-        note: '测试连接后可直接选择接口返回的模型，也可以手动填写模型 ID。',
-        options: [{ value: preset.defaultModel, label: preset.defaultModel }],
-      },
-    ],
-  };
-};
-
-const CODEX_PAGE: SettingsVendorPage = {
-  key: 'llm/codex',
-  vendor: 'openai',
-  title: 'OpenAI · Codex',
-  connection: 'codex',
-  note: '使用 ChatGPT 订阅登录，由官方 Codex CLI 管理凭据、续期与退出。OpenChatCut 不会读取或显示 OAuth 凭据。',
-  fields: [
-    {
-      name: 'CODEX_MODEL',
-      label: 'Codex 模型',
-      kind: 'text',
-      defaultLabel: 'Codex 默认模型',
-      discoverableModel: true,
-      note: '登录后可读取当前账号可用的模型，也可以手动填写模型 ID。',
-    },
-    {
-      name: 'CODEX_REASONING_EFFORT',
-      label: '推理强度',
-      kind: 'select',
-      options: [{ value: '', label: '模型默认' }],
-      note: '读取模型后显示当前模型支持的档位；留空使用该模型的默认值。',
-    },
-  ],
-};
-
-const AGENT_VENDOR_PAGES: readonly SettingsVendorPage[] = LLM_PROVIDER_PRESETS.flatMap((preset) => {
-  const page = llmPage(preset);
-  return preset.id === 'openai' ? [page, CODEX_PAGE] : [page];
-});
-
-// Vision bypass configuration: rendered by VisionModelPane (localStorage, not
-// a server key page). No fields — vendorConfigured stays false for it.
-const VISION_PAGE: SettingsVendorPage = {
-  key: 'llm/vision', vendor: 'vision', title: '视觉理解', fields: [],
-};
-
-// Outbound network proxy: applies to every overseas API the server talks to
-// (Agent models, AI generation, model-pack downloads, R2). Empty = use the
-// HTTPS_PROXY/HTTP_PROXY environment variables (Clash etc.).
-const PROXY_PAGE: SettingsVendorPage = {
-  key: 'agent/proxy', vendor: 'proxy', title: '网络代理', kind: 'settings',
-  note: '国内网络访问海外模型（Gemini / OpenAI / Anthropic / Mistral 等）失败时，'
-    + '可在此填写本地代理地址（如 http://127.0.0.1:7890）。'
-    + '留空则使用系统环境变量（HTTPS_PROXY / HTTP_PROXY）。'
-    + '生效范围：Agent 模型、AI 生成、模型下载、R2 云同步。',
-  fields: [
-    text('PROXY_URL', '代理地址', '例如 http://127.0.0.1:7890'),
-  ],
-};
-
-const AGENT_VENDOR_PAGES_WITH_VISION: readonly SettingsVendorPage[] = [
-  ...AGENT_VENDOR_PAGES,
-  VISION_PAGE,
-];
-
-// MiniMax serves 4 capabilities for the same Key/Base URL pair, and only the model fields of that capability are linked to the capability on the page.
 const MINIMAX_NOTE = 'MiniMax 同一个 Key，配置一次全能力（生图 / 配音 / 视频 / 音乐）通用。';
 const minimaxPage = (cap: string, modelField: SettingsField, title = 'MiniMax', vendor: VendorId = 'minimax'): SettingsVendorPage => ({
   key: `${cap}/${vendor}`, vendor, title, note: MINIMAX_NOTE,
@@ -189,6 +91,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
           { value: 'image-01', label: 'MiniMax' },
           { value: 'wavespeed', label: 'WaveSpeed' },
           { value: 'byteplus', label: 'BytePlus · Seedream' },
+          { value: 'grok-imagine', label: 'xAI Grok Imagine' },
         ]),
         vendors: [
           { key: 'image/openai', vendor: 'openai', title: 'OpenAI', fields: [
@@ -208,6 +111,12 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
           ] },
           byteplusPage('image', modelText('BYTEPLUS_IMAGE_MODEL', '生图模型', 'seedream-4-5-251128',
             '测试连接后可直接选择接口返回的模型，也可以手动填写模型 ID。', true), 'BytePlus · Seedream'),
+          { key: 'image/xai', vendor: 'xai', title: 'xAI · Grok Imagine',
+            note: '使用 xAI 订阅会话（SuperGrok / X Premium+，优先）或 LLM_XAI_API_KEY 生成图片。文生图：最多 4 张，1K / 2K。',
+            fields: [
+              modelText('XAI_IMAGE_MODEL', '生图模型', 'grok-imagine-image-2.0',
+                '测试连接后可直接选择接口返回的模型，也可以手动填写模型 ID。', true),
+            ] },
         ] },
       VOICE_SETTINGS_GROUP,
       { key: 'video', title: '生视频', hint: 'submit_video · 文 / 图生视频，任一厂商即可。',
@@ -216,6 +125,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
           { value: 'kling', label: '可灵' },
           { value: 'hailuo', label: 'MiniMax 海螺' },
           { value: 'byteplus', label: 'BytePlus · Seedance' },
+          { value: 'grok-imagine-video', label: 'xAI Grok Imagine' },
         ]),
         vendors: [
           { key: 'video/seedance', vendor: 'seedance', title: 'Seedance · 火山', fields: [
@@ -232,6 +142,12 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
             ['MiniMax-Hailuo-02', 'MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-2.3-Fast', 'S2V-01']), 'MiniMax 海螺', 'hailuo'),
           byteplusPage('video', modelText('BYTEPLUS_VIDEO_MODEL', '视频模型', 'seedance-1-5-pro-251215',
             '测试连接后可直接选择接口返回的模型，也可以手动填写模型 ID。', true), 'BytePlus · Seedance'),
+          { key: 'video/xai', vendor: 'xai', title: 'xAI · Grok Imagine (视频)',
+            note: '使用 xAI 订阅会话（SuperGrok / X Premium+，优先）或 LLM_XAI_API_KEY 生成视频。文生视频：1–15 秒，自带音轨，480p / 720p / 1080p。',
+            fields: [
+              modelText('XAI_VIDEO_MODEL', '视频模型', 'grok-imagine-video-1.5',
+                '测试连接后可直接选择接口返回的模型，也可以手动填写模型 ID。', true),
+            ] },
         ] },
       { key: 'music', title: '生音乐', hint: 'submit_music · 文字 / 成片生成配乐，任一厂商即可。',
         route: routeSelect('PREFERRED_MUSIC_VENDOR', [
@@ -280,26 +196,17 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     key: 'cloud', title: '存储', icon: 'cloud',
     groups: [
-      { key: 'storage', title: '媒体存储', hint: '工程与素材的本地保存目录，与可选的 R2 云备份。',
+      { key: 'storage', title: '默认工程位置', hint: '新工程和生成素材的默认保存位置，以及可选的 R2 云备份。',
         vendors: [
-          { key: 'storage/projects', vendor: 'localdisk', title: '工程存储目录',
-            note: '工程、历史版本与素材的存放位置。默认放在应用数据目录里；'
-              + '改到你自己的目录（外置硬盘、同步盘）后，卸载或重装应用都不会动到作品。'
-              + '保存时会把现有数据复制到新目录（原目录保留不删），重启应用后生效。',
+          { key: 'storage/projects', vendor: 'localdisk', title: '默认工程位置',
+            note: '新建工程、历史版本和应用生成的素材保存在这里。桌面端从外部拖入的文件和文件夹保留在原位置，'
+              + '工程只建立引用；浏览器运行时会上传托管副本。修改后重启应用生效。',
             fields: [
-              directory('OPENCHATCUT_DATA_DIR', '工程存储目录', '应用默认数据目录',
+              directory('OPENCHATCUT_DATA_DIR', '默认工程位置', '应用默认数据目录',
                 '桌面端点击“选择目录”；也可手动输入绝对路径（可用 ~/ 开头）。清除后回到默认目录。'),
             ] },
-          { key: 'storage/local', vendor: 'localdisk', title: '本地磁盘',
-            note: '桌面端默认把素材存入系统应用数据目录，浏览器开发版默认使用 public/media/uploads/。'
-              + '可选择任意本机目录或外置硬盘；保存后旧目录中的素材会复制到新目录（原文件保留），'
-              + '工程里的素材地址不变，预览与渲染导出都会跟随新目录。',
-            fields: [
-              directory('MEDIA_DIR', '素材保存目录', '系统默认素材目录',
-                '桌面端点击“选择目录”；浏览器中也可手动输入绝对路径。清除后回到当前运行环境的默认目录。'),
-            ] },
           { key: 'storage/r2', vendor: 'r2', title: 'Cloudflare R2',
-            note: '未配置时素材只存本机（「本地磁盘」页的目录）。配置后：每次上传同步写入 R2（桶保持私有，'
+            note: '未配置时素材只存本机。配置后：每次上传同步写入 R2（桶保持私有，'
               + '读取经本地服务回源，src 路径不变）；本机缺文件时自动从云端取回。改动即时生效。'
               + 'R2 控制台建桶 → R2 API Token（Object Read & Write）即可拿到下面四个值。',
             fields: [
@@ -409,6 +316,9 @@ export function vendorConfigured(
 ): boolean {
   if (page.connection === 'codex') {
     return Boolean(codexStatus?.installed && codexStatus.account?.type === 'chatgpt');
+  }
+  if (page.connection === 'xai-oauth') {
+    return Boolean(status?.keys?.LLM_XAI_OAUTH_API_KEY?.configured);
   }
   if (!status) return false;
   if (isLocalLlmProvider(page.vendor)) {

@@ -277,6 +277,12 @@ the legacy shared development store.
 
 The built-in Agent always runs the model loop on the local server. Chat, drafts, and proposals survive page refreshes and local service restarts. Timeline changes still go through the active editor's validated, undoable commands.
 
+### Agent local-path access (advanced)
+
+`import_asset` and `import_folder` can read only explicitly allowed local roots. On first use, the desktop app opens the system folder picker; the selected folder is remembered and the import resumes automatically. Media files are imported; document files such as TXT, Markdown, DOCX, and PDF should be attached to chat instead.
+
+For advanced/manual configuration, set a comma-separated value such as `AGENT_IMPORT_ROOTS=/Volumes/Media,D:\Projects` in `.env.local`. Source checkouts read the repository file at startup. Packaged desktop builds read it from Electron's user-data directory: `~/Library/Application Support/OpenChatCut/` on macOS, `%APPDATA%\OpenChatCut\` on Windows, and `$XDG_CONFIG_HOME/OpenChatCut/` (normally `~/.config/OpenChatCut/`) on Linux. Restart after editing the file.
+
 
 Local H.264 exports automatically prefer VideoToolbox on macOS and NVENC on compatible Windows systems, then fall back to software encoding. Tune render concurrency and the heavy-export limit with `OPENCHATCUT_RENDER_CONCURRENCY` and `OPENCHATCUT_MAX_ACTIVE_EXPORTS`, disable hardware encoding with `OPENCHATCUT_DISABLE_HARDWARE_ENCODING`, or override FFmpeg-side encoder selection with `OPENCHATCUT_H264_ENCODER`; see [`.env.example`](.env.example).
 
@@ -396,7 +402,7 @@ Clients must send `Authorization: Bearer <token>`. The current bridge is designe
 |---|---|
 | Frontend | React 19, TypeScript 6, Vite 8 |
 | Editing core | Immutable timeline state, command layer, and proposal-based application |
-| Agent | Vercel AI SDK 7 (Anthropic, OpenAI, Gemini, Kimi, Qwen, GLM, DeepSeek, MiniMax, Xiaomi MiMo, Mistral, and compatible APIs), Agent Skills, MCP SDK |
+| Agent | Vercel AI SDK 7 (Anthropic, OpenAI, Gemini, Kimi, Qwen, GLM, DeepSeek, MiniMax, Xiaomi MiMo, Mistral, xAI Grok by API key or SuperGrok/X Premium+ subscription sign-in, OpenRouter, OrcaRouter, and compatible APIs), Agent Skills, MCP SDK |
 | Preview and visuals | Remotion Player, WebGL / GLSL |
 | Server | Dual-host Vite / Electron plugins and a server-side keystore |
 | Persistence | Shared local project store under `~/.openchatcut`, IndexedDB cache, configurable local media directory, optional Cloudflare R2 |

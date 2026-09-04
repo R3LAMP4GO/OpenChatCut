@@ -3,6 +3,7 @@ import addFormats from 'ajv-formats';
 import type { AgentToolSchema } from './tool-schema';
 import { isExternalGlobalReadTool, isExternalReadTool } from './external-tool-policy';
 import { effectiveTranscriptionProvider } from './settings/agentSettings';
+import { normalizeSkillArgs } from './tools/skill-args';
 
 export type ToolEffect =
   | 'read'
@@ -16,8 +17,25 @@ export interface ToolExecutionPolicy {
   readonly recovery: ToolRecoveryPolicy;
 }
 export type ToolInvocationValidation =
-  | { readonly ok: true }
+  | { readonly ok: true; readonly args: Record<string, unknown> }
   | { readonly ok: false; readonly error: string; readonly issues: readonly string[] };
+
+type InvocationNormalizer = (args: Record<string, unknown>) => Record<string, unknown>;
+// Per-tool filler cleanup that runs BEFORE schema validation. Ajv enforces shapes like
+// files.minItems=1 and offset:integer, so a model's `files: []` or `offset: "0"` would
+// otherwise be rejected here and never reach the executor's own normalization.
+const INVOCATION_NORMALIZERS: ReadonlyMap<string, InvocationNormalizer> = new Map([
+  ['load_skill', normalizeSkillArgs],
+]);
+
+/** Filler-only cleanup, idempotent, applied by every adapter before validating an invocation. */
+export function normalizeAgentToolInvocationArgs(
+  name: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalize = INVOCATION_NORMALIZERS.get(name);
+  return normalize ? normalize(args) : args;
+}
 
 const READ_TOOLS = new Set([
   'read_agent_artifact', 'ToolSearch', 'track_progress', 'track_export',
@@ -66,13 +84,23 @@ function designStylePolicy(args?: Readonly<Record<string, unknown>>): ToolExecut
 /**
  * Materialize setting-backed defaults after schema validation so persistence
  * and execution bind to the same effective invocation.
+ *
+ * Also strips `__`-prefixed keys from the model-supplied args: those are
+ * INTERNAL control fields (generation reservation/rerun plumbing injects
+ * `__operationId`/`__rerunGeneration` AFTER this boundary). Ajv runs with
+ * strict:false and tool schemas do not set additionalProperties:false, so a
+ * prompt-injected `__rerunGeneration: true` would otherwise bypass the paid
+ * generation idempotency window and the durable reservation chain.
  */
 export function effectiveToolInvocationArgs(
   name: string,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (name !== 'transcribe_track' || args.provider !== undefined) return args;
-  return { ...args, provider: effectiveTranscriptionProvider(args) };
+  const effective = Object.keys(args).some((key) => key.startsWith('__'))
+    ? Object.fromEntries(Object.entries(args).filter(([key]) => !key.startsWith('__')))
+    : args;
+  if (name !== 'transcribe_track' || effective.provider !== undefined) return effective;
+  return { ...effective, provider: effectiveTranscriptionProvider(effective) };
 }
 
 
@@ -138,8 +166,9 @@ export function validateAgentToolInvocation(
   if (!args || typeof args !== 'object' || Array.isArray(args)) {
     return { ok: false, error: `Invalid arguments for tool ${schema.name}`, issues: ['arguments must be an object'] };
   }
+  const normalized = normalizeAgentToolInvocationArgs(schema.name, args);
   const validate = schemaValidator(active);
-  if (validate(args)) return { ok: true };
+  if (validate(normalized)) return { ok: true, args: normalized };
   const issues = (validate.errors ?? []).slice(0, 20).map(issueText);
   return {
     ok: false,

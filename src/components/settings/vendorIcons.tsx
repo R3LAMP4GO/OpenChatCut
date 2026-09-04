@@ -38,12 +38,12 @@ import lmstudioSvg from '../../../assets/vendor-icons/lmstudio-color.svg?raw';
 import visionSvg from '../../../assets/vendor-icons/vision.svg?raw';
 
 export type VendorId =
-  | 'llm' | 'anthropic' | 'openai' | 'gemini' | 'kimi' | 'qwen' | 'glm' | 'deepseek' | 'mistral' | 'openrouter'
+  | 'llm' | 'anthropic' | 'openai' | 'gemini' | 'kimi' | 'qwen' | 'glm' | 'deepseek' | 'mistral' | 'openrouter' | 'orcarouter'
   | 'ollama' | 'lmstudio' | 'xiaomi' | 'minimax' | 'hailuo' | 'elevenlabs' | 'doubao'
   | 'seedance' | 'kling' | 'mureka' | 'sonilo' | 'pexels' | 'pixabay' | 'unsplash' | 'freesound'
   | 'assemblyai' | 'deepgram' | 'groq' | 'cartesia' | 'e2b' | 'firecrawl' | 'r2' | 'localdisk' | 'localasr'
   | 'stepfun' | 'byteplus' | 'inworld' | 'fishaudio' | 'speechify' | 'wavespeed'
-  | 'vision' | 'proxy' | 'atlas';
+  | 'vision' | 'proxy' | 'atlas' | 'xai' | 'xai-oauth';
 
 interface SvgIcon {
   readonly svg: string;
@@ -101,6 +101,9 @@ const MONOGRAMS: Partial<Record<VendorId, { bg: string; mono: string; fg?: strin
   wavespeed: { bg: '#00B8D9', mono: 'WS' }, // WaveSpeed AI, no official SVG vendored yet
   atlas: { bg: '#147D64', mono: 'AC' }, // Atlas Cloud, neutral monogram keeps the provider list asset-free
   sonilo: { bg: '#101828', mono: 'SO', fg: '#e8f6f2' }, // Sonilo, no official SVG vendored yet
+  xai: { bg: '#101010', mono: 'x', fg: '#f7f7f8' }, // xAI Grok, no official SVG vendored yet
+  'xai-oauth': { bg: '#101010', mono: 'x', fg: '#f7f7f8' }, // xAI subscription login, shares the Grok monogram
+  orcarouter: { bg: '#0F172A', mono: 'OR', fg: '#38BDF8' }, // OrcaRouter gateway, no official SVG vendored yet
 };
 
 interface VendorIconProps {

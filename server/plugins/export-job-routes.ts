@@ -15,10 +15,12 @@ import type { ExportPlan, ExportRequest } from './export-plan.ts';
 import { acceptExportSubmission, type AcceptedExportSubmission } from './export-submission.ts';
 import {
   acquireExportPermit,
+  assertNonEmptyExportBytes,
   cancelActiveExportJob,
   exportJobFilename,
   exportOutputSize,
   forgetExportJobController,
+  promoteExportResult,
   retimeFps,
   trackExportJobController,
   withExportPermit,
@@ -54,10 +56,26 @@ function isExportCapabilitiesPath(url: string | undefined): boolean {
 export function registerExportJobRoute(server: ViteDevServer): void {
   server.middlewares.use('/export/job', async (req, res) => {
     const path = (req.url ?? '/').split('?')[0];
-    const id = path.replace(/^\/+|\/+$/g, '');
+    const segments = path.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+    const id = segments[0] ?? '';
+    const action = segments[1] ?? '';
+
+    if (req.method === 'POST' && action === 'promote' && segments.length === 2) {
+      const snapshot = getGenerationJobSnapshot(id);
+      if (!snapshot) { sendError(res, 404, `render job ${id} not found`); return; }
+      if (snapshot.status !== 'succeeded' || !snapshot.result) {
+        sendError(res, 409, `render job ${id} is not complete`); return;
+      }
+      try {
+        sendJson(res, 200, await promoteExportResult(snapshot.result, uploadDir()));
+      } catch (error) {
+        sendError(res, 500, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
 
     if (req.method === 'DELETE') {
-      if (!id) { sendError(res, 400, 'render id is required'); return; }
+      if (!id || segments.length !== 1) { sendError(res, 400, 'render id is required'); return; }
       const snapshot = getGenerationJobSnapshot(id);
       if (!snapshot) { sendError(res, 404, `render job ${id} not found`); return; }
       if (snapshot.status === 'queued' || snapshot.status === 'running') {
@@ -72,7 +90,7 @@ export function registerExportJobRoute(server: ViteDevServer): void {
       return;
     }
     if (req.method === 'GET') {
-      if (!id) { sendError(res, 400, 'render id is required'); return; }
+      if (!id || segments.length !== 1) { sendError(res, 400, 'render id is required'); return; }
       const snapshot = getGenerationJobSnapshot(id);
       if (!snapshot) { sendError(res, 404, `render job ${id} not found`); return; }
       const failure = isExportFailure(snapshot.params.exportFailure)
@@ -115,6 +133,7 @@ export function registerExportJobRoute(server: ViteDevServer): void {
           try {
             const encoding = await renderExportPlan(plan, filepath, update, controller.signal);
             const { size } = await stat(filepath);
+            assertNonEmptyExportBytes(size);
             controller.signal.throwIfAborted();
             const sourceFps = plan.state.fps;
             const outputSize = plan.format === 'video' ? exportOutputSize(plan.state, plan.scale) : undefined;
@@ -126,7 +145,7 @@ export function registerExportJobRoute(server: ViteDevServer): void {
               durationSeconds: plan.durationSeconds,
               sizeBytes: size,
               codec: plan.media.codec,
-              ...(encoding ?? {}),
+              ...encoding,
               ...(outputSize ? { ...outputSize, fps: plan.retimeFps ?? sourceFps } : {}),
               sourceStartSeconds: (plan.frameRange?.[0] ?? 0) / sourceFps,
             };

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm, chmod } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -10,13 +10,15 @@ const INITIALIZE_TIMEOUT_MS = 10_000;
 const MAX_REQUEST_TIMEOUT_MS = 60_000;
 const MAX_PROTOCOL_LINE_BYTES = 8 * 1024 * 1024;
 const CODEX_HOME = join(homedir(), '.openchatcut', 'codex');
+/** System Codex home that OpenChatCut's isolated CODEX_HOME inherits credentials from. */
+const SYSTEM_CODEX_HOME = join(homedir(), '.codex');
 export const CODEX_DISABLED_FEATURES = [
   'apps',
   'auth_elicitation',
   'browser_use',
   'browser_use_external',
   'browser_use_full_cdp_access',
-  'code_mode_host',
+  'code_mode',
   'computer_use',
   'enable_mcp_apps',
   'hooks',
@@ -37,6 +39,7 @@ export const CODEX_DISABLED_FEATURES = [
 ] as const;
 const APP_SERVER_ARGS: readonly string[] = [
   ...CODEX_DISABLED_FEATURES.flatMap((feature) => ['-c', `features.${feature}=false`]),
+  '-c', 'features.code_mode_host=true',
   '-c', 'tools.view_image=false',
   '-c', 'web_search=disabled',
   'app-server', '--listen', 'stdio://',
@@ -227,8 +230,39 @@ export class CodexAppServerClient {
     }
   }
 
+  /**
+   * Inherit the system Codex login when the isolated CODEX_HOME has none yet:
+   * the isolated home starts empty, so a Codex CLI that was already logged in
+   * through ChatGPT would otherwise fail every call with 401 Missing Bearer.
+   * Copy-once (never overwrite a login created inside the isolated home).
+   */
+  private async seedCredentials(): Promise<void> {
+    const isolatedAuth = join(CODEX_HOME, 'auth.json');
+    const systemAuth = join(SYSTEM_CODEX_HOME, 'auth.json');
+    try {
+      await readFile(isolatedAuth, 'utf8');
+      return;
+    } catch {
+      /* isolated home has no auth yet - seed from the system home below */
+    }
+    let content: string;
+    try {
+      content = await readFile(systemAuth, 'utf8');
+    } catch {
+      return; // no system login to inherit
+    }
+    if (!content.trim()) return;
+    try {
+      await copyFile(systemAuth, isolatedAuth);
+      await chmod(isolatedAuth, 0o600);
+    } catch {
+      /* seeding is best-effort; a missing login surfaces as 401 later */
+    }
+  }
+
   private async startProcess(): Promise<void> {
     await mkdir(CODEX_HOME, { recursive: true, mode: 0o700 });
+    await this.seedCredentials();
     const runtimeCwd = await mkdtemp(join(tmpdir(), 'openchatcut-codex-runtime-'));
     const command = codexCommand(this.executablePath, [...this.argsPrefix, ...APP_SERVER_ARGS]);
     const child = spawn(command.executable, command.args, {

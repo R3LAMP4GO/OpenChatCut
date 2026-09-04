@@ -12,6 +12,8 @@ import {
   unregisterEditor,
 } from '../external-agent/broker.ts';
 import { handleMcpRequest, mcpTools } from '../external-agent/mcp.ts';
+import { exportJianyingDraft } from '../external-agent/jianying-export.ts';
+import { CONNECT_CLIENTS, connectExternalClient } from '../external-agent/client-connect.ts';
 import { claimBrowserProjectOwnership } from '../external-agent/project-edit-ownership.ts';
 import {
   EDITOR_BOOTSTRAP_HEADER,
@@ -19,6 +21,7 @@ import {
   editorBootstrapPayload,
   editorCredentialAuthorized,
   externalMcpAuthorized,
+  externalMcpToken,
   headerValue,
   trustedEditorRequest,
 } from '../editor-auth.ts';
@@ -101,6 +104,24 @@ export async function handleExternalAgentBridge(
   }
   if (write && !isJsonRequest(req)) {
     sendBridgeJson(res, 415, { error: 'editor bridge writes require JSON' });
+    return;
+  }
+  if (write && url.pathname === '/jianying-export') {
+    const body = await readBridgeJson(req);
+    const result = await exportJianyingDraft(body);
+    sendBridgeJson(res, result.ok ? 200 : 400, result);
+    return;
+  }
+  if (write && url.pathname === '/connect-client') {
+    const body = await readBridgeJson(req);
+    const client = body.client;
+    const token = externalMcpToken();
+    if (typeof client !== 'string' || !CONNECT_CLIENTS.includes(client as (typeof CONNECT_CLIENTS)[number])) {
+      sendBridgeJson(res, 400, { ok: false, error: 'invalid-client' });
+      return;
+    }
+    const result = await connectExternalClient(client, `${requestBaseUrl(req)}/api/external-mcp/mcp`, token);
+    sendBridgeJson(res, result.ok ? 200 : 500, result);
     return;
   }
   await routeExternalAgentBridge(req, res, url, operations);

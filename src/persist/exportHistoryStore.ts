@@ -3,12 +3,14 @@
 // first. Same shared server-backed KV as projectStore/templateStore.
 // Persisted data is untrusted → validated on read.
 import { kvGet as idbGet, kvSet as idbSet } from './sharedKv';
+import { partitionRecords, withPreservedRecords } from './recordPartition';
 
 const KEY = 'export:history';
 // ponytail: cap so the list can't grow unbounded across a long session; a
 // single-user clone won't realistically exceed this. Raise if it ever matters.
 const MAX_RECORDS = 200;
 const DESKTOP_DESTINATION_ID = /^[A-Za-z0-9_-]{32,128}$/;
+let mutationQueue: Promise<void> = Promise.resolve();
 
 export interface ExportRecord {
   id: string;
@@ -33,21 +35,27 @@ function toValidRecord(v: unknown): ExportRecord | null {
   if (typeof r.id !== 'string' || typeof r.name !== 'string' || typeof r.format !== 'string' || typeof r.createdAt !== 'number') return null;
   const range = r.frameRange && typeof r.frameRange.start === 'number' && typeof r.frameRange.end === 'number'
     ? { start: r.frameRange.start, end: r.frameRange.end } : undefined;
-  return {
+  const validated: ExportRecord = {
+    // Fields this build predates pass through instead of being dropped on the
+    // next write; every field it DOES know is replaced by its checked value.
+    ...r,
     id: r.id, name: r.name, format: r.format, createdAt: r.createdAt,
-    ...(typeof r.codec === 'string' ? { codec: r.codec } : {}),
-    ...(typeof r.sizeBytes === 'number' ? { sizeBytes: r.sizeBytes } : {}),
-    ...(range ? { frameRange: range } : {}),
+    ...(typeof r.codec === 'string' ? { codec: r.codec } : { codec: undefined }),
+    ...(typeof r.sizeBytes === 'number' ? { sizeBytes: r.sizeBytes } : { sizeBytes: undefined }),
+    ...(range ? { frameRange: range } : { frameRange: undefined }),
     ...(typeof r.destinationId === 'string' && DESKTOP_DESTINATION_ID.test(r.destinationId)
       ? { destinationId: r.destinationId }
-      : {}),
+      : { destinationId: undefined }),
   };
+  return validated;
+}
+
+async function readPartitioned() {
+  return partitionRecords(await idbGet<unknown>(KEY), toValidRecord);
 }
 
 async function readAll(): Promise<ExportRecord[]> {
-  const raw = await idbGet<unknown>(KEY);
-  if (!Array.isArray(raw)) return [];
-  return raw.map(toValidRecord).filter((r): r is ExportRecord => r !== null);
+  return (await readPartitioned()).valid;
 }
 
 const newId = () =>
@@ -55,13 +63,22 @@ const newId = () =>
     ? crypto.randomUUID()
     : `exp_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
 
+function enqueueMutation(action: () => Promise<void>): Promise<void> {
+  const result = mutationQueue.then(action);
+  mutationQueue = result.catch(() => undefined);
+  return result;
+}
+
 /** Append one finished export (id generated here; caller passes createdAt).
  * Stored newest-first and capped; persist failures are swallowed (in-session UX unaffected). */
 export async function recordExport(rec: Omit<ExportRecord, 'id'>): Promise<void> {
   try {
     const entry: ExportRecord = { ...rec, id: newId() };
-    const next = [entry, ...await readAll()].slice(0, MAX_RECORDS);
-    await idbSet(KEY, next);
+    await enqueueMutation(async () => {
+      const { valid, opaque } = await readPartitioned();
+      const next = [entry, ...valid].slice(0, MAX_RECORDS);
+      await idbSet(KEY, withPreservedRecords(next, opaque));
+    });
   } catch {
     /* ignore persist failures */
   }
@@ -70,6 +87,7 @@ export async function recordExport(rec: Omit<ExportRecord, 'id'>): Promise<void>
 /** Recent exports, newest-first, capped to `limit` (default 50). */
 export async function listExportHistory(limit = 50): Promise<ExportRecord[]> {
   try {
+    await mutationQueue;
     const all = await readAll();
     return limit > 0 ? all.slice(0, limit) : all;
   } catch {
@@ -79,7 +97,7 @@ export async function listExportHistory(limit = 50): Promise<ExportRecord[]> {
 
 export async function clearExportHistory(): Promise<void> {
   try {
-    await idbSet(KEY, []);
+    await enqueueMutation(() => idbSet(KEY, []));
   } catch {
     /* ignore */
   }

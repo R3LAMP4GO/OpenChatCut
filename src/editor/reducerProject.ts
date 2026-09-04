@@ -4,6 +4,7 @@ import { fitItemToDuration } from './clipFit';
 import { reconcileTransitions } from './transitionReconcile';
 import { sequenceGraphError, sequenceReferencesTo } from './sequenceGraph';
 import { revisionAfterRelink, sourceRevisionOf, withMediaSourceRevision } from './mediaSourceRevision';
+import { isTimelineMediaAssetKind } from './mediaTypes';
 import { normalizeSha256Hash } from '../../shared/content-hash.js';
 import { canonicalizeMediaAsset } from './mediaContentIdentity.js';
 import { mapTimelineAssetItems, removeAssetFromTimeline, timelineItemUsesAsset } from './mediaAssetUsage';
@@ -65,8 +66,13 @@ export function projectReduce(p: ProjectDoc, a: AnyAction): ProjectDoc {
       }
       case 'tl.rename':
         return { ...p, timelines: p.timelines.map((t) => (t.id === a.id ? { ...t, name: a.name } : t)) };
-      case 'tl.retarget':
-        return { ...p, timelines: p.timelines.map((t) => (t.id === a.id ? { ...t, width: a.width, height: a.height, fit: a.fit ?? t.fit ?? 'contain' } : t)) };
+      case 'tl.retarget': {
+        if (!Number.isFinite(a.width) || !Number.isFinite(a.height)) return p;
+        const width = Math.round(a.width);
+        const height = Math.round(a.height);
+        if (width < 1 || height < 1) return p;
+        return { ...p, timelines: p.timelines.map((t) => (t.id === a.id ? { ...t, width, height, fit: a.fit ?? t.fit ?? 'contain' } : t)) };
+      }
       case 'tl.setHidden': {
         // The last visible timeline cannot be hidden.
         const visible = p.timelines.filter((t) => !t.hidden);
@@ -176,7 +182,8 @@ export function projectReduce(p: ProjectDoc, a: AnyAction): ProjectDoc {
         };
         const relinkTimelineItem = (item: TimelineItem): TimelineItem => {
           if (!isRelinkableMediaKind(item.kind)) return item;
-          const timing = relinkTiming(item, a.durationInFrames, a.kind ?? item.kind);
+          const replacementKind = a.kind && isTimelineMediaAssetKind(a.kind) ? a.kind : item.kind;
+          const timing = relinkTiming(item, a.durationInFrames, replacementKind);
           if (!timing) return item;
           const {
             denoisedSrc: _staleDenoisedSrc,
@@ -197,7 +204,7 @@ export function projectReduce(p: ProjectDoc, a: AnyAction): ProjectDoc {
             name: a.name ?? item.name,
             width: a.width ?? item.width,
             height: a.height ?? item.height,
-            kind: a.kind ?? item.kind,
+            kind: replacementKind,
             transcriptStale: sourceChanged && item.transcript?.length ? true : item.transcriptStale,
           });
         };

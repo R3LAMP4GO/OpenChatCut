@@ -264,6 +264,46 @@ async function verifyBrowserStreamCancellationAbortsWritable(): Promise<void> {
   assert.equal(closes, 0, 'an aborted writable is not closed as a successful target');
 }
 
+async function verifyEmptyOutputIsRejected(): Promise<void> {
+  let opens = 0;
+  let aborts = 0;
+  let closes = 0;
+  const destination: ExportDestination = {
+    type: 'browser-file',
+    label: 'empty.mp4',
+    handle: {
+      kind: 'file',
+      name: 'empty.mp4',
+      queryPermission: async () => 'granted',
+      requestPermission: async () => 'granted',
+      createWritable: async () => {
+        opens += 1;
+        return {
+          write: async () => undefined,
+          close: async () => { closes += 1; },
+          abort: async () => { aborts += 1; },
+        };
+      },
+    },
+  };
+  await assert.rejects(
+    () => writeBlobToDestination(destination, 'empty.mp4', new Blob()),
+    (error) => error instanceof ExportFailureError
+      && error.failure.code === 'export_output_empty'
+      && error.message === '导出文件为空',
+  );
+  assert.equal(opens, 0, 'an empty blob is rejected before opening its destination');
+
+  globalThis.fetch = (async () => new Response(new Uint8Array())) as typeof fetch;
+  await assert.rejects(
+    () => writeUrlToDestination(destination, 'empty.mp4', '/media/uploads/empty.mp4'),
+    /导出文件为空/,
+  );
+  assert.equal(opens, 1);
+  assert.equal(aborts, 1, 'an empty response aborts its opened writable');
+  assert.equal(closes, 0, 'an empty response never commits its destination');
+}
+
 async function verifyDesktopRestoreAndStreaming(): Promise<void> {
   const grant = { grantId: 'a'.repeat(43), label: 'Exports' };
   const fileGrant = { ...grant, label: 'chosen.fcpxml', filename: 'chosen.fcpxml' };
@@ -292,7 +332,6 @@ async function verifyDesktopRestoreAndStreaming(): Promise<void> {
   globalThis.fetch = (async (input, init) => {
     const url = String(input);
     requests.push(url);
-    if (!init) return new Response('streamed-video');
     if (failDestination) {
       return Response.json({
         error: 'export target is already being written',
@@ -306,16 +345,17 @@ async function verifyDesktopRestoreAndStreaming(): Promise<void> {
         },
       }, { status: 409 });
     }
-    uploaded = await new Response(init.body).text();
+    uploaded = init?.headers
+      ? String(new Headers(init.headers).get('X-OpenChatCut-Export-Source'))
+      : await new Response(init?.body).text();
     return new Response(null, { status: 204 });
   }) as typeof fetch;
   const destination: ExportDestination = { type: 'desktop-directory', ...grant };
   await writeUrlToDestination(destination, 'clip.mp4', '/media/uploads/source.mp4');
   assert.deepEqual(requests, [
-    'http://localhost:5199/media/uploads/source.mp4',
     `/api/export-destinations/${grant.grantId}/clip.mp4`,
   ]);
-  assert.equal(uploaded, 'streamed-video');
+  assert.equal(uploaded, '/media/uploads/source.mp4');
   requests.length = 0;
   const fileDestination: ExportDestination = { type: 'desktop-file', ...fileGrant };
   await writeBlobToDestination(fileDestination, 'project.fcpxml', new Blob(['xml']));
@@ -355,6 +395,7 @@ try {
   await verifyPickerCancellation();
   verifyDestinationCompatibility();
   await verifyBrowserStreamCancellationAbortsWritable();
+  await verifyEmptyOutputIsRejected();
   await verifyDesktopRestoreAndStreaming();
   console.log('export destination verification passed');
 } finally {

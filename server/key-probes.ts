@@ -23,6 +23,7 @@ import {
   type LlmProvider,
 } from '../shared/llm-providers.ts';
 import { versionedApiBaseUrl } from './plugins/media-provider-config.ts';
+import { xaiOauthAccessToken } from './xai-oauth-session.ts';
 import {
   classifyStatus,
   networkMessage,
@@ -33,8 +34,35 @@ export { classifyStatus, networkMessage, type ProbeResult } from './key-probe-re
 // Proxy-aware fetch: attaches the configured outbound proxy (keystore
 // PROXY_URL or HTTPS_PROXY/HTTP_PROXY env) via undici dispatcher.
 type FetchInit = Parameters<typeof fetch>[1] & { dispatcher?: unknown };
-const fetchWithProxy = (url: RequestInfo | URL, init?: FetchInit): Promise<Response> =>
-  fetch(url, { ...init, dispatcher: proxyDispatcher() } as RequestInit);
+
+// Probes send REAL stored credentials to a user/agent-settable base URL.
+// Loopback and private hosts stay allowed (local models and LAN gateways are
+// legitimate), but cloud metadata / link-local targets and credential-bearing
+// or non-http(s) URLs never are — those only appear in SSRF exfil attempts.
+export function probeUrlError(url: RequestInfo | URL): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    return '探测地址不是合法 URL';
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return `探测地址协议不支持:${parsed.protocol}`;
+  }
+  if (parsed.username || parsed.password) return '探测地址不允许携带内嵌凭据';
+  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (/^169\.254\.\d{1,3}\.\d{1,3}$/.test(host) || host.startsWith('fe80:')
+    || host === 'metadata.google.internal') {
+    return '探测地址指向云元数据/链路本地网段,已拒绝';
+  }
+  return null;
+}
+
+const fetchWithProxy = (url: RequestInfo | URL, init?: FetchInit): Promise<Response> => {
+  const unsafe = probeUrlError(url);
+  if (unsafe) return Promise.reject(new Error(unsafe));
+  return fetch(url, { ...init, dispatcher: proxyDispatcher() } as RequestInit);
+};
 
 
 type Get = (name: KeyName) => string;
@@ -242,6 +270,19 @@ const groqProbe: ProbeDef = {
   }),
 };
 
+/** xAI media pages: one probe for image and video; the subscription session
+ * token takes priority over the configured LLM API key. */
+const xaiMediaProbe: ProbeDef = {
+  needs: [['LLM_XAI_OAUTH_API_KEY'], ['LLM_XAI_API_KEY']],
+  run: (get) => {
+    const token = xaiOauthAccessToken() || get('LLM_XAI_API_KEY');
+    return fetchWithProxy(`${base(get, 'LLM_XAI_BASE_URL', 'https://api.x.ai/v1')}/models`, {
+      signal: t(), headers: token ? bearer(token) : {},
+    });
+  },
+  models: parseModelCatalog,
+};
+
 const elevenLabsProbe: ProbeDef = {
   needs: [['ELEVENLABS_API_KEY']],
   run: (get) => fetch(`${base(get, 'ELEVENLABS_BASE_URL', 'https://api.elevenlabs.io')}/v1/models`, {
@@ -276,6 +317,7 @@ export const PROBES: Record<string, ProbeDef> = {
   'image/gemini': geminiMediaProbe,
   'image/minimax': minimaxProbe,
   'image/byteplus': byteplusProbe,
+  'image/xai': xaiMediaProbe,
   'image/wavespeed': {
     needs: [['WAVESPEED_API_KEY']],
     run: (get) => fetch(`${base(get, 'WAVESPEED_BASE_URL', 'https://api.wavespeed.ai')}/api/v3/balance`, {
@@ -340,6 +382,7 @@ export const PROBES: Record<string, ProbeDef> = {
   },
   'video/hailuo': minimaxProbe,
   'video/byteplus': byteplusProbe,
+  'video/xai': xaiMediaProbe,
   'music/mureka': {
     needs: [['MUREKA_API_KEY']],
     run: (get) => fetch(`${base(get, 'MUREKA_BASE_URL', 'https://api.mureka.ai')}/v1/account/billing`, {

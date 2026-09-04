@@ -7,9 +7,19 @@ import type { Plugin } from 'vite';
 import { generateImage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 
-import { isSafeUploadName, resolveUploadFile, uploadDir } from '../media-dir.ts';
-import { presignGetUpload, putUploadFile } from '../r2.ts';
+import { uploadDir } from '../media-dir.ts';
 import { fetchGeneratedResult } from './result-download.ts';
+import {
+  callByteplusImageProvider,
+  callGeminiProvider,
+  callGrokImageProvider,
+  callMinimaxProvider,
+  callWaveSpeedProvider,
+  imageMimeType,
+  imageProviderError,
+  localImageAssetPath,
+  type ProviderImage,
+} from './image-provider-clients.ts';
 // Proxy-aware fetch: attaches the configured outbound proxy (keystore
 // PROXY_URL or HTTPS_PROXY/HTTP_PROXY env) via undici dispatcher.
 type FetchInit = Parameters<typeof fetch>[1] & { dispatcher?: unknown };
@@ -39,6 +49,9 @@ interface ImagePluginOptions {
   byteplusBaseUrl: string;
   byteplusApiKey: string;
   byteplusModel: string;
+  xaiBaseUrl: string;
+  xaiApiKey: string;
+  xaiImageModel: string;
 }
 
 interface ImageRequest {
@@ -63,7 +76,7 @@ interface ImageRequest {
 }
 
 export interface ValidImageRequest {
-  model: 'gpt-image-2' | 'nano-banana' | 'image-01' | 'wavespeed' | 'byteplus';
+  model: 'gpt-image-2' | 'nano-banana' | 'image-01' | 'wavespeed' | 'byteplus' | 'grok-imagine';
   prompt: string;
   aspectRatio?: string;
   imageSize: string;
@@ -89,6 +102,7 @@ function customDimensions(input: ImageRequest, model: ValidImageRequest['model']
   if (width == null || height == null) return {};
   if (input.aspectRatio != null) throw new Error('custom width/height cannot be combined with aspectRatio');
   if (model === 'nano-banana') throw new Error('custom width/height are not supported by nano-banana');
+  if (model === 'grok-imagine') throw new Error('custom width/height are not supported by grok-imagine');
   if (!Number.isInteger(width) || !Number.isInteger(height)) throw new Error('width and height must be integers');
   const [minimum, maximum, divisor] = model === 'image-01' ? [512, 2048, 8] : [512, 3840, 16];
   if (width < minimum || width > maximum || height < minimum || height > maximum) {
@@ -129,7 +143,7 @@ function rejectForeignImageOptions(input: ImageRequest, model: ValidImageRequest
 /** Pure request validation — exported for unit checks. */
 export function validateImageRequest(input: ImageRequest): ValidImageRequest {
   const model = String(input.model ?? 'gpt-image-2');
-  if (model !== 'gpt-image-2' && model !== 'nano-banana' && model !== 'image-01' && model !== 'wavespeed' && model !== 'byteplus') {
+  if (model !== 'gpt-image-2' && model !== 'nano-banana' && model !== 'image-01' && model !== 'wavespeed' && model !== 'byteplus' && model !== 'grok-imagine') {
     throw new Error(`unsupported model ${model}`);
   }
   const prompt = String(input.prompt ?? '').trim();
@@ -162,6 +176,13 @@ export function validateImageRequest(input: ImageRequest): ValidImageRequest {
     if (prompt.length > 32_000) throw new Error('gpt-image-2 prompt must be at most 32000 characters');
     if (imageSize === '512px') throw new Error('gpt-image-2 imageSize must be 1K, 2K, or 4K');
     validateGptOptions(input, referencePaths.length > 0);
+  } else if (model === 'grok-imagine') {
+    if (count > 4) throw new Error('grok-imagine supports at most 4 images per call');
+    if (imageSize === '512px' || imageSize === '4K') throw new Error('grok-imagine imageSize must be 1K or 2K');
+    if (aspectRatio && !['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'].includes(aspectRatio)) {
+      throw new Error(`grok-imagine does not support aspect ratio ${aspectRatio}`);
+    }
+    if (prompt.length > 8000) throw new Error('grok-imagine prompt must be at most 8000 characters');
   }
   return {
     model,
@@ -181,11 +202,6 @@ export function validateImageRequest(input: ImageRequest): ValidImageRequest {
     seed: input.seed,
     promptOptimizer: input.promptOptimizer,
   };
-}
-
-interface ProviderImage {
-  b64_json?: string;
-  url?: string;
 }
 
 async function readJson(req: IncomingMessage): Promise<ImageRequest> {
@@ -213,20 +229,6 @@ function dimensions(aspectRatio: string, imageSize: string): [number, number] {
   const width = landscape ? longEdge : Math.round(longEdge * rw / rh / 16) * 16;
   const height = landscape ? Math.round(longEdge * rh / rw / 16) * 16 : longEdge;
   return [width, height];
-}
-
-function localAssetPath(path: string): string {
-  if (!path.startsWith('/media/uploads/')) throw new Error('reference asset must be under /media/uploads/');
-  const name = path.slice('/media/uploads/'.length);
-  if (!isSafeUploadName(name)) throw new Error('invalid reference asset path');
-  const file = resolveUploadFile(name);  // Customized directories take priority, and the old default directories are ignored.
-  if (!file) throw new Error(`reference asset not found: ${name}`);
-  return file;
-}
-
-async function providerError(response: Response): Promise<string> {
-  const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-  return body?.error?.message ?? `image provider failed (${response.status})`;
 }
 
 interface GptImageInput {
@@ -258,7 +260,7 @@ function appendGptOptions(target: FormData | Record<string, unknown>, body: GptI
 }
 
 async function appendImageFile(form: FormData, field: string, path: string, filename: string) {
-  const file = localAssetPath(path);
+  const file = localImageAssetPath(path);
   const bytes = await readFile(file);
   const ext = extname(file).slice(1).toLowerCase() || 'png';
   form.append(field, new Blob([bytes], { type: imageMimeType(file) }), `${filename}.${ext}`);
@@ -322,184 +324,10 @@ async function callProvider(baseUrl: string, apiKey: string, body: GptImageInput
   }
 
   const response = await fetchWithProxy(`${baseUrl.replace(/\/$/, '')}${endpoint}`, { method: 'POST', headers, body: requestBody });
-  if (!response.ok) throw new Error(await providerError(response));
+  if (!response.ok) throw new Error(await imageProviderError(response));
   const result = await response.json() as { data?: ProviderImage[] };
   if (!result.data?.length) throw new Error('image provider returned no images');
   return result.data;
-}
-
-function imageMimeType(file: string): string {
-  const ext = extname(file).slice(1).toLowerCase();
-  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
-  if (ext === 'svg') return 'image/svg+xml';
-  return `image/${ext || 'png'}`;
-}
-
-async function callGeminiProvider(baseUrl: string, apiKey: string, model: string, body: Required<Pick<ImageRequest, 'prompt' | 'count'>> & { aspectRatio: string; imageSize: string; referencePaths: string[] }): Promise<ProviderImage[]> {
-  const input: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mime_type: string }> = [
-    { type: 'text', text: body.prompt },
-  ];
-  for (const path of body.referencePaths) {
-    const file = localAssetPath(path);
-    input.push({ type: 'image', data: (await readFile(file)).toString('base64'), mime_type: imageMimeType(file) });
-  }
-
-  return Promise.all(Array.from({ length: body.count }, async () => {
-    const response = await fetchWithProxy(`${baseUrl.replace(/\/$/, '')}/v1beta/interactions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        model,
-        input,
-        response_format: {
-          type: 'image',
-          mime_type: 'image/png',
-          aspect_ratio: body.aspectRatio,
-          image_size: body.imageSize,
-        },
-      }),
-    });
-    if (!response.ok) throw new Error(await providerError(response));
-    const result = await response.json() as { output_image?: { data?: string } };
-    if (!result.output_image?.data) throw new Error('Nano Banana returned no image');
-    return { b64_json: result.output_image.data };
-  }));
-}
-
-interface MinimaxImageResponse {
-  data?: { image_urls?: string[]; image_base64?: string[] };
-  base_resp?: { status_code?: number; status_msg?: string };
-}
-
-async function callMinimaxProvider(baseUrl: string, apiKey: string, model: string, body: {
-  prompt: string;
-  count: number;
-  aspectRatio?: string;
-  width?: number;
-  height?: number;
-  seed?: number;
-  referencePaths: string[];
-  promptOptimizer?: boolean;
-}): Promise<ProviderImage[]> {
-  const requestBody: Record<string, unknown> = {
-    model,
-    prompt: body.prompt,
-    n: body.count,
-    response_format: 'url',
-  };
-  if (body.aspectRatio) requestBody.aspect_ratio = body.aspectRatio;
-  if (body.width != null && body.height != null) {
-    requestBody.width = body.width;
-    requestBody.height = body.height;
-  }
-  if (body.seed != null) requestBody.seed = body.seed;
-  if (body.promptOptimizer != null) requestBody.prompt_optimizer = body.promptOptimizer;
-  if (body.referencePaths.length) {
-    requestBody.subject_reference = await Promise.all(body.referencePaths.map(async (path) => ({
-      type: 'character',
-      image_file: await minimaxSubjectUrl(path),
-    })));
-  }
-  const response = await fetchWithProxy(`${baseUrl.replace(/\/$/, '')}/v1/image_generation`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(requestBody),
-  });
-  if (!response.ok) throw new Error(await providerError(response));
-  const result = await response.json() as MinimaxImageResponse;
-  if (result.base_resp && result.base_resp.status_code !== 0) {
-    throw new Error(result.base_resp.status_msg || `MiniMax image failed (${result.base_resp.status_code})`);
-  }
-  const images: ProviderImage[] = [
-    ...(result.data?.image_urls ?? []).map((url) => ({ url })),
-    ...(result.data?.image_base64 ?? []).map((b64) => ({ b64_json: b64 })),
-  ];
-  if (!images.length) throw new Error('MiniMax returned no images');
-  return images;
-}
-
-interface WaveSpeedResult {
-  data?: { id?: string; status?: string; outputs?: string[]; error?: string };
-}
-
-async function waveSpeedError(response: Response): Promise<string> {
-  const body = await response.json().catch(() => null) as { message?: string; data?: { error?: string } } | null;
-  return body?.data?.error ?? body?.message ?? `WaveSpeed request failed (${response.status})`;
-}
-
-const WAVESPEED_TERMINAL_FAILURES = new Set(['failed', 'cancelled', 'timeout']);
-
-async function waveSpeedPollResult(baseUrl: string, apiKey: string, taskId: string): Promise<string> {
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    await new Promise((resolvePoll) => setTimeout(resolvePoll, 2_000));
-    const response = await fetchWithProxy(`${baseUrl}/api/v3/predictions/${encodeURIComponent(taskId)}/result`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!response.ok) throw new Error(await waveSpeedError(response));
-    const result = await response.json() as WaveSpeedResult;
-    const status = result.data?.status ?? '';
-    if (status === 'completed') {
-      const url = result.data?.outputs?.[0];
-      if (!url) throw new Error('WaveSpeed completed without an output URL');
-      return url;
-    }
-    if (WAVESPEED_TERMINAL_FAILURES.has(status)) throw new Error(result.data?.error || `WaveSpeed generation ${status}`);
-  }
-  throw new Error('WaveSpeed generation timed out');
-}
-
-async function callWaveSpeedProvider(baseUrl: string, apiKey: string, model: string, body: {
-  prompt: string;
-  count: number;
-  width: number;
-  height: number;
-}): Promise<ProviderImage[]> {
-  const root = baseUrl.replace(/\/$/, '');
-  return Promise.all(Array.from({ length: body.count }, async () => {
-    const response = await fetchWithProxy(`${root}/api/v3/${model}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ prompt: body.prompt, size: `${body.width}*${body.height}` }),
-    });
-    if (!response.ok) throw new Error(await waveSpeedError(response));
-    const submitted = await response.json() as WaveSpeedResult;
-    const taskId = submitted.data?.id;
-    if (!taskId) throw new Error('WaveSpeed did not return a task id');
-    return { url: await waveSpeedPollResult(root, apiKey, taskId) };
-  }));
-}
-
-/** BytePlus ModelArk (Seedream): OpenAI-images-compatible, but the endpoint hangs directly off
- * the Ark base URL (no /v1 segment) unlike the default OpenAI path. */
-async function callByteplusImageProvider(baseUrl: string, apiKey: string, model: string, body: {
-  prompt: string;
-  count: number;
-  width: number;
-  height: number;
-}): Promise<ProviderImage[]> {
-  const response = await fetchWithProxy(`${baseUrl.replace(/\/$/, '')}/images/generations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model, prompt: body.prompt, n: body.count, size: `${body.width}x${body.height}`, response_format: 'url',
-    }),
-  });
-  if (!response.ok) throw new Error(await providerError(response));
-  const result = await response.json() as { data?: ProviderImage[] };
-  if (!result.data?.length) throw new Error('BytePlus returned no images');
-  return result.data;
-}
-
-async function minimaxSubjectUrl(path: string): Promise<string> {
-  const file = localAssetPath(path);
-  const name = path.slice('/media/uploads/'.length).split(/[?#]/, 1)[0];
-  await putUploadFile(name, file, imageMimeType(file));
-  const signed = await presignGetUpload(name, 3600);
-  if (!signed) {
-    throw new Error('MiniMax reference images require configured R2 storage so the provider can fetch a temporary HTTPS URL');
-  }
-  return signed.downloadUrl;
 }
 
 const SAVED_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp']);
@@ -507,11 +335,14 @@ const SAVED_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp']);
 async function saveImage(image: ProviderImage, fallbackExt: string): Promise<string> {
   let bytes: Buffer;
   let ext = fallbackExt === 'jpeg' ? 'jpg' : fallbackExt;
-  if (image.b64_json) bytes = Buffer.from(image.b64_json, 'base64');
-  else if (image.url) {
+  if (image.b64_json) {
+    bytes = Buffer.from(image.b64_json, 'base64');
+    if (bytes[0] === 0xff && bytes[1] === 0xd8) ext = 'jpg';
+    else if (bytes[0] === 0x89 && bytes[1] === 0x50) ext = 'png';
+    else if (bytes.slice(0, 4).toString('latin1') === 'RIFF') ext = 'webp';
+  } else if (image.url) {
     const response = await fetchGeneratedResult(image.url, 'image');
     bytes = Buffer.from(await response.arrayBuffer());
-    // URL downloads (e.g. MiniMax) are often jpeg — keep the real extension.
     const urlExt = extname(new URL(image.url).pathname).slice(1).toLowerCase();
     if (SAVED_IMAGE_EXTS.has(urlExt)) ext = urlExt;
   } else throw new Error('image provider returned neither bytes nor URL');
@@ -564,6 +395,10 @@ export function imageGenerationPlugin(options: ImagePluginOptions): Plugin {
             if (!options.byteplusApiKey) throw new Error('BytePlus is not configured. Set BYTEPLUS_API_KEY in .env.local.');
             images = await callByteplusImageProvider(options.byteplusBaseUrl, options.byteplusApiKey, options.byteplusModel, {
               prompt, count, width, height,
+            });
+          } else if (model === 'grok-imagine') {
+            images = await callGrokImageProvider(options.xaiBaseUrl, options.xaiApiKey, options.xaiImageModel, {
+              prompt, count, aspectRatio, imageSize,
             });
           } else {
             if (!options.apiKey) throw new Error('Image generation is not configured. Set IMAGE_API_KEY or OPENAI_API_KEY in .env.local.');

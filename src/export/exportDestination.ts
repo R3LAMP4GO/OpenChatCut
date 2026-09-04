@@ -422,11 +422,15 @@ function desktopWriteError(status: number): ExportDestinationError {
 async function putDesktopBody(
   destination: Extract<ExportDestination, { type: 'desktop-directory' | 'desktop-file' }>,
   filename: string,
-  body: Blob | ReadableStream<Uint8Array>,
+  body: Blob | ReadableStream<Uint8Array> | undefined,
   signal?: AbortSignal,
+  sourcePath?: string,
 ): Promise<void> {
   signal?.throwIfAborted();
-  const init: RequestInit & { duplex?: 'half' } = { method: 'PUT', body, signal };
+  const init: RequestInit & { duplex?: 'half' } = {
+    method: 'PUT', body, signal,
+    ...(sourcePath ? { headers: { 'X-OpenChatCut-Export-Source': sourcePath } } : {}),
+  };
   if (body instanceof ReadableStream) init.duplex = 'half';
   const endpoint = `/api/export-destinations/${encodeURIComponent(destination.grantId)}/${encodeURIComponent(filename)}`;
   const response = await fetch(endpoint, init);
@@ -480,6 +484,7 @@ async function writeBrowserResponse(
   signal?.throwIfAborted();
   const writable = await browserWritable(handle, filename, signal);
   const reader = response.body?.getReader();
+  let bytesWritten = 0;
   let abortPromise: Promise<void> | null = null;
   const abortWrite = (reason: unknown): Promise<void> => {
     abortPromise ??= Promise.all([
@@ -498,11 +503,13 @@ async function writeBrowserResponse(
         const chunk = await reader.read();
         signal?.throwIfAborted();
         if (chunk.done) break;
+        bytesWritten += chunk.value.byteLength;
         await writable.write(chunk.value);
         signal?.throwIfAborted();
       }
     }
     signal?.throwIfAborted();
+    if (bytesWritten === 0) throw new ExportDestinationError('导出文件为空');
     await writable.close();
   } catch (error) {
     await abortWrite(error);
@@ -517,9 +524,10 @@ async function writeBrowserResponse(
 function destinationWriteFailure(error: unknown, targetPath: string): ExportFailureError {
   const existing = exportFailureFrom(error);
   if (existing) return new ExportFailureError(existing);
+  const empty = error instanceof ExportDestinationError && error.key === '导出文件为空';
   return new ExportFailureError(createExportFailure({
     stage: 'destination',
-    code: 'export_destination_write_failed',
+    code: empty ? 'export_output_empty' : 'export_destination_write_failed',
     retryable: true,
     targetPath,
     message: error instanceof Error ? error.message : String(error),
@@ -540,6 +548,7 @@ export async function writeBlobToDestination(
   try {
     signal?.throwIfAborted();
     if (!(blob instanceof Blob)) throw new ExportDestinationError('导出文件内容无效');
+    if (blob.size === 0) throw new ExportDestinationError('导出文件为空');
     if (target.type === 'downloads') {
       signal?.throwIfAborted();
       downloadBlob(blob, outputFilename);
@@ -567,10 +576,28 @@ export async function writeUrlToDestination(
   const safeName = checkedFilename(filename);
   const outputFilename = exportDestinationFilename(target, safeName);
   const targetPath = exportDestinationTargetPath(target, outputFilename);
+  let safeSource: string;
+  try {
+    safeSource = safeSourceUrl(sourceUrl);
+  } catch (error) {
+    throw destinationWriteFailure(error, targetPath);
+  }
+  const localSource = new URL(safeSource);
+  if ((target.type === 'desktop-directory' || target.type === 'desktop-file')
+    && localSource.origin === new URL(window.location.href).origin
+    && localSource.pathname.startsWith('/media/uploads/')) {
+    try {
+      await putDesktopBody(target, outputFilename, undefined, signal, localSource.pathname);
+      return;
+    } catch (error) {
+      signal?.throwIfAborted();
+      throw destinationWriteFailure(error, targetPath);
+    }
+  }
   let response: Response;
   try {
     signal?.throwIfAborted();
-    response = await fetch(safeSourceUrl(sourceUrl), signal ? { signal } : undefined);
+    response = await fetch(safeSource, signal ? { signal } : undefined);
     signal?.throwIfAborted();
   } catch (error) {
     signal?.throwIfAborted();
@@ -599,6 +626,7 @@ export async function writeUrlToDestination(
     }
     const blob = await response.blob();
     signal?.throwIfAborted();
+    if (blob.size === 0) throw new ExportDestinationError('导出文件为空');
     downloadBlob(blob, outputFilename);
   } catch (error) {
     await response.body?.cancel().catch(() => undefined);

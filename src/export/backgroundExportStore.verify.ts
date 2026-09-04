@@ -11,6 +11,7 @@ import type {
   WorkflowOperations,
 } from './exportWorkflowTypes';
 import { createExportJobStore } from './backgroundExportStore';
+import { notifyAgentExportSubmitted, subscribeAgentExportJobs } from './agentExportTracking';
 interface Deferred {
   promise: Promise<void>;
   resolve(): void;
@@ -47,6 +48,16 @@ const jobId = store.start({
     finished.resolve();
   },
 });
+
+let duplicateRuns = 0;
+const duplicateId = store.start({
+  label: 'project.mp4',
+  targetPath: 'Exports/project.mp4',
+  async execute() { duplicateRuns += 1; },
+});
+await Promise.resolve();
+assert.equal(duplicateId, jobId, 'an active target reuses its existing export job');
+assert.equal(duplicateRuns, 0, 'rapid duplicate starts do not launch a second render');
 
 assert.equal(store.getSnapshot().jobs[0]?.id, jobId);
 unmountModal();
@@ -361,11 +372,68 @@ async function verifyNormalArtifactExport(): Promise<void> {
   assert.equal(job?.progress.phase, 'completed');
 }
 
+async function verifyAgentExportTracking(): Promise<void> {
+  const originalFetch = globalThis.fetch;
+  try {
+    const tracked = createExportJobStore();
+    let finishRequest!: (response: Response) => void;
+    globalThis.fetch = (() => new Promise<Response>((resolve) => { finishRequest = resolve; })) as typeof fetch;
+    const unsubscribe = subscribeAgentExportJobs('project-agent', tracked, (key) => key);
+    notifyAgentExportSubmitted({
+      renderId: 'render-agent', projectId: 'project-agent', label: 'agent.mp4', createdAt: 1_000,
+    });
+    const completed = new Promise<void>((resolve) => {
+      const stop = tracked.subscribe(() => {
+        if (tracked.getSnapshot().jobs[0]?.progress.phase !== 'completed') return;
+        stop();
+        resolve();
+      });
+    });
+    await Promise.resolve();
+    assert.equal(tracked.getActiveCount(), 1);
+    assert.equal(tracked.getSnapshot().jobs[0]?.label, 'agent.mp4');
+    finishRequest(Response.json({
+      id: 'render-agent', status: 'succeeded', progress: 100,
+      result: { path: '/media/uploads/agent.mp4', name: 'agent.mp4', sizeBytes: 12 },
+    }));
+    await completed;
+    assert.equal(tracked.getActiveCount(), 0);
+    assert.equal(tracked.getSnapshot().jobs[0]?.progress.outputSize, 12);
+    unsubscribe();
+
+    let deleted = false;
+    globalThis.fetch = ((url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        deleted = String(url).endsWith('/render-cancel');
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      });
+    }) as typeof fetch;
+    const unsubscribeCancel = subscribeAgentExportJobs('project-agent', tracked, (key) => key);
+    notifyAgentExportSubmitted({
+      renderId: 'render-cancel', projectId: 'project-agent', label: 'cancel.mp4', createdAt: 2_000,
+    });
+    await Promise.resolve();
+    const jobId = tracked.getSnapshot().jobs.find((job) => job.label === 'cancel.mp4')?.id;
+    assert.ok(jobId);
+    assert.equal(tracked.cancel(jobId), true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(deleted, true);
+    assert.equal(tracked.getSnapshot().jobs.find((job) => job.id === jobId)?.progress.phase, 'cancelled');
+    unsubscribeCancel();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 await verifyCancelledRenderedArtifact('mg');
 await verifyCancelledRenderedArtifact('xml');
 await verifyCancelledSubtitleArtifact();
 await verifyRunnerChecksAbortBeforeCompletion();
 await verifyCommittedTargetWinsLateAbort();
 await verifyNormalArtifactExport();
+await verifyAgentExportTracking();
 
 console.log('background export store verification passed');

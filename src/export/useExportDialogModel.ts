@@ -33,6 +33,7 @@ import {
   type QualityMode,
 } from '../media/qualityPolicy';
 import type { ExportDestination } from './exportDestination';
+import { exportMediaExtension } from './exportMediaExtension';
 import type { ExportEngineInfo, ExportEngineReason } from './exportWorkflowTypes';
 import {
   effectiveIncludeMg,
@@ -49,6 +50,7 @@ export const EXPORT_TABS = [
   { key: 'mg', label: '动态图层', summary: 'ProRes 4444', icon: 'sparkles' },
   { key: 'subtitles', label: '字幕稿', summary: 'SRT / TXT', icon: 'captions' },
   { key: 'xml', label: '剪辑工程', summary: 'FCPXML', icon: 'clipboard' },
+  { key: 'jianying', label: '剪映草稿', summary: 'CapCut / 剪映', icon: 'video' },
 ] as const satisfies ReadonlyArray<{ key: ExportTab; label: string; summary: string; icon: IconName }>;
 
 export const EXPORT_ACTION_LABELS: Record<ExportTab, string> = {
@@ -57,6 +59,7 @@ export const EXPORT_ACTION_LABELS: Record<ExportTab, string> = {
   mg: '导出动态图层',
   subtitles: '下载字幕',
   xml: '生成剪辑工程',
+  jianying: '导出剪映草稿',
 };
 
 export const EXPORT_FPS = [...EXPORT_FPS_OPTIONS];
@@ -179,13 +182,12 @@ function useSubtitleSettings(state: TimelineState): ExportSubtitleSettings {
 
 function outputName(base: string, tab: ExportTab, video: ExportVideoSettings, subtitles: ExportSubtitleSettings, nleFormat: 'fcp_xml' | 'fcp_xml_resolve', mgOutput: string): string {
   if (tab === 'video') {
-    if (video.codec === 'vp8') return `${base}.webm`;
-    if (video.codec === 'prores') return `${base}.mov`;
-    return `${base}.mp4`;
+    return `${base}.${exportMediaExtension('video', video.codec)}`;
   }
   if (tab === 'audio') return `${base}.mp3`;
   if (tab === 'subtitles') return `${base}.${subtitles.format}`;
   if (tab === 'xml') return `${base}-${nleFormat === 'fcp_xml_resolve' ? 'resolve' : 'premiere'}.fcpxml`;
+  if (tab === 'jianying') return `${base}-jianying`;
   return mgOutput;
 }
 

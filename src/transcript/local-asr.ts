@@ -9,7 +9,7 @@ import {
   TranscriptionError, transcriptionSourceForPath,
   type AssemblyAiCheckpointWriter, type AssemblyAiResumeCheckpoint, type TranscribeOptions,
 } from './assemblyai';
-import { downsampleMono } from './client-asr-extract';
+import { downsampleMono, hasTranscribableSignal } from './client-asr-extract';
 import { ASR_INFERENCE_CONTRACT } from '../../shared/asr-inference-contract';
 import { tryDesktopNativeAsr, warmUpDesktopNativeAsr } from './desktop-native-asr';
 import { desktopNativeInferenceEnabled } from './desktop-inference-preference';
@@ -230,6 +230,16 @@ function reportModelProgress(
   else if (file) onWait?.(`加载模型 ${file.split('/').pop() ?? ''}`);
 }
 
+async function runTranscriptionStage<T>(stage: string, operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof TranscriptionError) throw error;
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new TranscriptionError('service-unavailable', `${stage}失败：${detail}`);
+  }
+}
+
 /** Transcribe a same-origin media path with the on-device model. */
 /**
  * Refuse to transcribe with a partially downloaded model. A model whose
@@ -282,9 +292,9 @@ export async function localTranscribePathResumable(
   const config = chooseAsrConfig(profile);
   await assertAsrModelDownloaded(config);
   if (desktopNativeInferenceEnabled()) {
-    source = await transcriptionSourceForPath(path, opts);
+    const nativeSource = await transcriptionSourceForPath(path, opts);
     const native = await tryDesktopNativeAsr({
-      sourcePath: source,
+      sourcePath: nativeSource,
       config,
       language: opts.languageCode ?? 'zh',
       onProgress: (progress, file) => reportModelProgress(onWait, progress, file),
@@ -295,14 +305,17 @@ export async function localTranscribePathResumable(
       return toTranscriptResult(native.result);
     }
   }
+  const source = await runTranscriptionStage('音轨准备', () => transcriptionSourceForPath(path, opts, true));
+  const samples = await runTranscriptionStage('音频解码', () => decodeSourceToSamples(source));
+  if (!hasTranscribableSignal(samples, TARGET_SR)) {
+    await onCheckpoint({ ...checkpoint, providerStatus: 'completed' });
+    return toTranscriptResult({ text: '', chunks: [] });
+  }
   const client = getSharedClient();
   client.attachProgress((progress, file) => reportModelProgress(onWait, progress, file));
-  await client.ensureLoaded(config);
+  await runTranscriptionStage('模型加载', () => client.ensureLoaded(config));
   await onCheckpoint({ ...checkpoint, providerStatus: 'processing' });
-
-  source ??= await transcriptionSourceForPath(path, opts);
-  const samples = await decodeSourceToSamples(source);
-  const result = await client.transcribe(samples, opts.languageCode ?? 'zh');
+  const result = await runTranscriptionStage('模型推理', () => client.transcribe(samples, opts.languageCode ?? 'zh'));
   await onCheckpoint({ ...checkpoint, providerStatus: 'completed' });
   return toTranscriptResult(result);
 }

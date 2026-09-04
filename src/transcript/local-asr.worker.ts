@@ -71,6 +71,12 @@ async function loadModel(request: Extract<LocalAsrWorkerRequest, { type: 'load' 
           )), LOAD_ATTEMPT_TIMEOUT_MS);
         }),
       ]);
+      // Word timestamps need the decoder prefix skipped before DTW and the
+      // sequence trimmed to match. transformers.js did neither through 3.8.1,
+      // so this used to monkey-patch _extract_token_timestamps. 4.x does both
+      // natively — it takes a num_input_ids argument and passes init_tokens.length
+      // at every call site — and no longer exports the dynamic_time_warping the
+      // patch was built on. The library owns this now.
       asr = next as AutomaticSpeechRecognitionPipeline;
     } catch (error) {
       throw localAsrLoadError(error);

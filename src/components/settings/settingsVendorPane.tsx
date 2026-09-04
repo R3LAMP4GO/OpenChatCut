@@ -11,6 +11,7 @@ import { shouldRenderModelPicker } from './codexReasoning';
 import { llmProviderConfigNames, normalizeLlmProvider } from '../../../shared/llm-providers';
 import { MODEL_CAPABILITY_OVERRIDES_KEY } from '../../../shared/model-capabilities';
 import { ModelCapabilityEditor } from './ModelCapabilityEditor';
+import { XaiOauthVendorPane } from './XaiOauthVendorPane';
 import { VisionModelPane } from './VisionModelPane';
 import { LocalAsrPane } from './LocalAsrPane';
 import { LocalModelPackPane } from './LocalModelPackPane';
@@ -21,8 +22,11 @@ import {
   type KeyStatusResponse, type SelectOption, type SettingsField, type SettingsVendorPage,
   type StagedValues as Values,
 } from './settingsSchema';
-export const ON = theme.success; // Status green → Semantic token (graphite value ≈ original #4caf7d, light skin automatically changes to dark green)
-export const WARN = '#f77';    // Error / Clear warning (retain the original panel error color)
+import {
+  browseBtn, clearBtn, fieldCardBox, fieldHead, fieldHint, input, ON, pageNote,
+  pane, select, sourceTag, testBtn, testMsg, testRow, WARN,
+} from './settingsVendorPane.styles';
+export { ON, WARN } from './settingsVendorPane.styles';
 
 /** Field rendering shared context: server status + temporary storage + plain text switch + temporary storage/clear callback. */
 export interface FieldCtx {
@@ -34,8 +38,9 @@ export interface FieldCtx {
   modelOptions: Record<string, readonly string[]>;
   onModelsDiscovered: (name: string, models: readonly string[]) => void;
   codex: CodexSettingsController;
+  /** Re-read /api/keys and push the result to the agent runtime (used by connection-style pages after login/logout). */
+  refreshStatus: () => Promise<void>;
 }
-
 const CAPABILITY_OVERRIDE_FIELD: SettingsField = {
   name: MODEL_CAPABILITY_OVERRIDES_KEY, label: '模型能力', kind: 'text', defaultLabel: '',
 };
@@ -58,6 +63,7 @@ export function VendorPane({ page, hint, ctx }: {
 }) {
   const t = useT();
   if (page.connection === 'codex') return <CodexVendorPane page={page} hint={hint} ctx={ctx} />;
+  if (page.connection === 'xai-oauth') return <XaiOauthVendorPane page={page} hint={hint} ctx={ctx} />;
   if (page.key === 'llm/vision') return <VisionModelPane />;
   if (page.kind === 'local-models') return <LocalModelsPane page={page} fields={page.fields} ctx={ctx} />;
   const on = vendorConfigured(ctx.status, page, ctx.codex.status);
@@ -192,7 +198,7 @@ async function requestProbe(page: SettingsVendorPage, ctx: FieldCtx, translate: 
   return { body, staged };
 }
 
-function TestConnectionRow({ page, ctx }: { page: SettingsVendorPage; ctx: FieldCtx }) {
+export function TestConnectionRow({ page, ctx }: { page: SettingsVendorPage; ctx: FieldCtx }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ProbeShown | null>(null);
@@ -203,7 +209,7 @@ function TestConnectionRow({ page, ctx }: { page: SettingsVendorPage; ctx: Field
     try {
       const { body, staged } = await requestProbe(page, ctx, t);
       const suffix = staged && body.ok ? t('（按当前输入测试，记得保存）') : '';
-      setResult({ page: page.key, ok: body.ok, message: body.message + suffix });
+      setResult({ page: page.key, ok: body.ok, message: t(body.message) + suffix });
       const modelField = page.fields.find((field) => field.discoverableModel);
       if (body.ok && modelField && Array.isArray(body.models)) {
         ctx.onModelsDiscovered(modelField.name, body.models);
@@ -463,38 +469,3 @@ function SelectInput({ field, status, shown, options, onStage }: {
     </select>
   );
 }
-
-// ── Style ───────────────────────────────────────────────────────────
-
-const pane: React.CSSProperties = {
-  flex: 1, minWidth: 0, overflowY: 'auto', padding: '14px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12,
-};
-  const fieldCardBox: React.CSSProperties = { background: theme.bg, border: `0.5px solid ${theme.border}`, borderRadius: 4, padding: '11px 13px' };
-const pageNote: React.CSSProperties = { fontSize: 10.5, color: theme.textDim };
-const fieldHead: React.CSSProperties = {
-  fontSize: 11.5, color: theme.text, display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'space-between',
-};
-const input: React.CSSProperties = {
-  font: 'inherit', fontSize: 12.5, background: theme.panelAlt, color: theme.text,
-  border: `0.5px solid ${theme.border}`, borderRadius: 6, padding: '6px 9px', width: '100%', outline: 'none',
-};
-const select: React.CSSProperties = { ...input, cursor: 'pointer', colorScheme: 'var(--cc-color-scheme)' };
-const sourceTag: React.CSSProperties = { fontSize: 10, color: theme.textDim, border: `0.5px solid ${theme.border}`, borderRadius: 4, padding: '0 5px' };
-const clearBtn: React.CSSProperties = {
-  font: 'inherit', fontSize: 10.5, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', flex: '0 0 auto', textDecoration: 'underline',
-};
-const browseBtn: React.CSSProperties = {
-  font: 'inherit', fontSize: 11.5, color: theme.text, background: theme.panelAlt,
-  border: `0.5px solid ${theme.border}`, borderRadius: 6, padding: '6px 11px',
-  cursor: 'pointer', flex: '0 0 auto', whiteSpace: 'nowrap',
-};
-const fieldHint: React.CSSProperties = { fontSize: 10.5, color: theme.textDim };
-const testRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, minHeight: 26 };
-const testBtn: React.CSSProperties = {
-  font: 'inherit', fontSize: 11.5, background: 'transparent', color: theme.text,
-  border: `0.5px solid ${theme.border}`, borderRadius: 4, padding: '4px 11px', flex: '0 0 auto',
-};
-const testMsg: React.CSSProperties = {
-  flex: 1, minWidth: 0, fontSize: 11, lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box',
-  WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-};

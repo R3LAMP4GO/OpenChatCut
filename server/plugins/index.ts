@@ -44,6 +44,7 @@ import { skillInstallPlugin } from "./skill-install.ts";
 import { skillExecPlugin } from "./skill-exec.ts";
 import { externalAgentPlugin } from "./external-agent.ts";
 import { codexAgentPlugin } from "./codex-agent.ts";
+import { xaiOauthPlugin } from "./xai-oauth.ts";
 import { llmProxyPlugin } from "./llm-proxy.ts";
 import { agentRunsPlugin } from "../agent-runs/routes.ts";
 import { resourcePreviewPlugin } from "./resource-preview.ts";
@@ -59,6 +60,7 @@ export function serverPlugins(options: { projectStoreHttp?: boolean } = {}): Plu
     crossOriginIsolationPlugin(),
     storageLifecyclePlugin(),
     llmProxyPlugin(),
+    xaiOauthPlugin(),
     agentRunsPlugin(),
     skillFilesPlugin(),
     skillInstallPlugin(),
@@ -137,6 +139,15 @@ export function serverPlugins(options: { projectStoreHttp?: boolean } = {}): Plu
       },
       get byteplusModel() {
         return getKey("BYTEPLUS_IMAGE_MODEL") || "seedream-4-5-251128";
+      },
+      get xaiBaseUrl() {
+        return getKey("LLM_XAI_BASE_URL") || "https://api.x.ai/v1";
+      },
+      get xaiApiKey() {
+        return getKey("LLM_XAI_API_KEY");
+      },
+      get xaiImageModel() {
+        return getKey("XAI_IMAGE_MODEL") || "grok-imagine-image-2.0";
       },
     }),
     voiceGenerationPlugin({
@@ -289,6 +300,15 @@ export function serverPlugins(options: { projectStoreHttp?: boolean } = {}): Plu
       },
       get byteplusApiKey() {
         return getKey("BYTEPLUS_API_KEY");
+      },
+      get xaiBaseUrl() {
+        return getKey("LLM_XAI_BASE_URL") || "https://api.x.ai/v1";
+      },
+      get xaiApiKey() {
+        return getKey("LLM_XAI_API_KEY");
+      },
+      get xaiVideoModel() {
+        return getKey("XAI_VIDEO_MODEL") || "grok-imagine-video-1.5";
       },
       get byteplusModel() {
         return getKey("BYTEPLUS_VIDEO_MODEL") || "seedance-1-5-pro-251215";

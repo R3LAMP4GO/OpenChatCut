@@ -26,11 +26,16 @@ const ALLOWED_DATA_LITERALS = new Set([
   'src/components/settings/VisionModelPane.tsx::图片与时间线帧由所选视觉模型理解后以文本注入。',
   'src/components/settings/VisionModelPane.tsx::禁用',
   'src/components/settings/VisionModelPane.tsx::不描述图片，一律剥离。',
+  'src/components/settings/VisionModelPane.tsx::xAI (订阅登录)',
 ]);
 const ALLOWED_RAW_RENDER_LITERALS = new Set([
   'src/components/TopBar.tsx::中',
 ]);
 const USER_FACING_ATTRIBUTES = new Set(['alt', 'aria-label', 'placeholder', 'title']);
+
+function relativeSourcePath(filePath) {
+  return path.relative(ROOT, filePath).split(path.sep).join('/');
+}
 
 function walk(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -91,7 +96,7 @@ function isInsideTranslation(node, sf) {
 }
 
 function issue(sf, node, message) {
-  const relative = path.relative(ROOT, sf.fileName);
+  const relative = relativeSourcePath(sf.fileName);
   const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
   return `${relative}:${line + 1}:${character + 1} ${message}`;
 }
@@ -233,7 +238,7 @@ function auditJsxExpression(sf, node, relative, initializers) {
 
 function auditUiFile(filePath, keys) {
   const sf = sourceFile(filePath);
-  const relative = path.relative(ROOT, filePath);
+  const relative = relativeSourcePath(filePath);
   const initializers = collectInitializers(sf);
   const issues = [];
   function visit(node) {
@@ -261,7 +266,7 @@ const keys = englishKeys();
 const sourceFiles = walk(SOURCE_ROOT).filter((filePath) => {
   if (!/\.tsx?$/.test(filePath)) return false;
   if (filePath.startsWith(path.join(SOURCE_ROOT, 'i18n'))) return false;
-  const relative = path.relative(ROOT, filePath);
+  const relative = relativeSourcePath(filePath);
   return !isTestFile(relative);
 });
 const translationIssues = sourceFiles.flatMap((filePath) => {
@@ -286,7 +291,7 @@ const translationIssues = sourceFiles.flatMap((filePath) => {
 });
 const uiFiles = walk(SOURCE_ROOT).filter((filePath) => {
   if (!filePath.endsWith('.tsx')) return false;
-  const relative = path.relative(ROOT, filePath);
+  const relative = relativeSourcePath(filePath);
   if (SKIPPED_UI_FILES.has(relative)) return false;
   if (relative.startsWith('src/editor/')) return false;
   return !isTestFile(relative);

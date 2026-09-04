@@ -46,6 +46,7 @@ assert.equal(normalizeLlmProvider('KIMI'), 'kimi');
 assert.equal(normalizeLlmProvider('qwen'), 'qwen');
 assert.equal(normalizeLlmProvider('glm'), 'glm');
 assert.equal(normalizeLlmProvider('OpenRouter'), 'openrouter');
+assert.equal(normalizeLlmProvider('OrcaRouter'), 'orcarouter');
 assert.equal(normalizeLlmProvider('unexpected'), 'anthropic');
 assert.equal(defaultModelForProvider('anthropic'), 'claude-fable-5');
 assert.equal(defaultModelForProvider('openai'), 'gpt-5');
@@ -53,12 +54,14 @@ assert.equal(defaultModelForProvider('kimi'), 'kimi-k3');
 assert.equal(defaultModelForProvider('qwen'), 'qwen-plus');
 assert.equal(defaultModelForProvider('glm'), 'glm-5.2');
 assert.equal(defaultModelForProvider('openrouter'), 'openrouter/auto');
+assert.equal(defaultModelForProvider('orcarouter'), 'orcarouter/auto');
 assert.equal(providerApiPath('anthropic'), '/messages');
 assert.equal(providerApiPath('openai'), '/responses');
 assert.equal(providerApiPath('openai', 'chat'), '/chat/completions');
 assert.equal(providerApiPath('kimi'), '/chat/completions');
 assert.equal(providerApiPath('gemini'), '/models');
 assert.equal(providerApiPath('openrouter'), '/chat/completions');
+assert.equal(providerApiPath('orcarouter'), '/chat/completions');
 
 const strippedVisualMessages = withoutModelImages([{
   role: 'user',
@@ -83,6 +86,7 @@ assert.equal((await getLanguageModel('openai', 'test-model', 'chat')).provider, 
 assert.equal((await getLanguageModel('kimi', 'test-model')).provider, 'moonshotai.chat');
 assert.equal((await getLanguageModel('gemini', 'test-model')).provider, 'google.generative-ai');
 assert.equal((await getLanguageModel('openrouter', 'openrouter/auto')).provider, 'openrouter.chat');
+assert.equal((await getLanguageModel('orcarouter', 'orcarouter/auto')).provider, 'orcarouter.chat');
 assert.deepEqual(getLanguageModelProviderOptions('openai'), { openai: { store: false } });
 assert.equal(getLanguageModelProviderOptions('openai', 'chat'), undefined);
 assert.deepEqual(getLanguageModelProviderOptions('minimax'), {
@@ -105,7 +109,8 @@ for (const preset of LLM_PROVIDER_PRESETS) {
   assert.equal(normalizeLlmProvider(preset.id), preset.id);
   assert.equal(defaultModelForProvider(preset.id), preset.defaultModel);
   assert.doesNotThrow(() => new URL(preset.baseUrl));
-  // Providers with official exclusive packages use the official package (provider id varies from package to package); the rest are openai-compatible
+  // Providers with official exclusive packages use the official package (provider id varies from package to package); the rest are openai-compatible.
+  // The xAI subscription provider rides the OpenAI Responses adapter by design.
   const DEDICATED_PROVIDER_IDS: Record<string, string> = {
     anthropic: 'anthropic.messages',
     openai: 'openai.responses',
@@ -114,6 +119,8 @@ for (const preset of LLM_PROVIDER_PRESETS) {
     qwen: 'alibaba.chat',
     deepseek: 'deepseek.chat',
     mistral: 'mistral.chat',
+    xai: 'xai.responses',
+    'xai-oauth': 'openai.responses',
   };
   assert.equal(
     (await getLanguageModel(preset.id, 'test-model')).provider,
@@ -147,6 +154,7 @@ try {
     ['openai', 'gpt-test', undefined],
     ['openai', 'gpt-chat-test', 'chat'],
     ['kimi', 'kimi-test', undefined],
+    ['xai', 'grok-test', undefined],
   ] as const) {
     await assert.rejects(generateText({
       model: await getLanguageModel(provider, model, openAiApiMode),
@@ -166,6 +174,7 @@ assert.deepEqual(serialized.map(({ url, body, provider }) => ({
   { path: '/llm/responses', model: 'gpt-test', provider: 'openai' },
   { path: '/llm/chat/completions', model: 'gpt-chat-test', provider: 'openai' },
   { path: '/llm/chat/completions', model: 'kimi-test', provider: 'kimi' },
+  { path: '/llm/responses', model: 'grok-test', provider: 'xai' },
 ]);
 
 const legacy = normalizeLlmMessages([

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { applyLiveCaps, applyLiveKeyStatus, applyLiveModels } from '../agent/capabilities';
 import { fetchCodexModels, fetchCodexStatus } from '../agent/codex/client';
-import { applyAgentModelStatus, applyCodexAgentStatus } from '../agent/model-selection';
+import { applyAgentModelStatus, applyCodexAgentStatus, selectAgentModel, getActiveAgentModelChoice, getAgentModelSnapshot } from '../agent/model-selection';
+import { loadAgentModelPref } from '../persist/sessionPrefs';
 import type { ProjectDoc, TimelineState } from '../editor/types';
 import {
   createProject,
@@ -12,11 +13,6 @@ import {
 import type { ProjectMeta } from '../persist/projectStoreCoordinators';
 import { kvRemoteMode } from '../persist/sharedKv';
 import { projectStoreWriteCredential } from '../persist/projectStoreTransport';
-import { warmUpLocalAsr } from '../transcript/local-asr';
-import {
-  preferredTranscriptionProvider,
-  TRANSCRIPTION_PROVIDER_CHANGE_EVENT,
-} from '../transcript/provider';
 
 export type AppRoute = { name: 'dashboard' } | { name: 'editor'; id: string };
 
@@ -72,7 +68,7 @@ async function syncAgentBackends(isActive: () => boolean): Promise<void> {
     }
   }
   if (codexResult.status !== 'fulfilled') return;
-  const modelResult = codexResult.value.account?.type === 'chatgpt'
+  const modelResult = codexResult.value.installed && codexResult.value.account?.type !== 'apiKey'
     ? await fetchCodexModels().catch(() => null)
     : null;
   if (!isActive()) return;
@@ -82,6 +78,14 @@ async function syncAgentBackends(isActive: () => boolean): Promise<void> {
     savedCodexReasoningEffort,
     modelResult && !modelResult.error ? modelResult.models : [],
   );
+  // When Codex (the MCP route) is available and the user has never pinned a
+  // model, make Codex the active model so the composer starts on the MCP
+  // backend instead of the configured default LLM.
+  const active = getActiveAgentModelChoice();
+  if (active && active.backend !== 'codex' && !loadAgentModelPref()) {
+    const codex = getAgentModelSnapshot().choices.find((choice) => choice.backend === 'codex');
+    if (codex) selectAgentModel(codex.id);
+  }
 }
 
 export function useAppRoute(): AppRoute {
@@ -100,37 +104,6 @@ export function useAgentBackendSync(): void {
     void syncAgentBackends(() => alive);
     return () => { alive = false; };
   }, []);
-}
-
-export function useLocalAsrWarmup(routeName: AppRoute['name']): void {
-  useEffect(() => {
-    if (routeName !== 'editor') return;
-    let alive = true;
-    let timer: number | null = null;
-    const schedule = () => {
-      if (timer !== null) window.clearTimeout(timer);
-      if (preferredTranscriptionProvider() !== 'local') return;
-      timer = window.setTimeout(() => {
-        void fetch('/api/asr-models', { cache: 'no-store' })
-          .then((response) => (response.ok ? response.json() : null))
-          .catch(() => null)
-          .then((body: { models?: { modelId?: string; downloaded?: boolean }[] } | null) => {
-            if (!alive || !Array.isArray(body?.models)) return;
-            const downloadedIds = body.models
-              .filter((model) => model.downloaded && typeof model.modelId === 'string')
-              .map((model) => model.modelId as string);
-            if (downloadedIds.length > 0) void warmUpLocalAsr(downloadedIds);
-          });
-      }, 4000);
-    };
-    schedule();
-    window.addEventListener(TRANSCRIPTION_PROVIDER_CHANGE_EVENT, schedule);
-    return () => {
-      alive = false;
-      if (timer !== null) window.clearTimeout(timer);
-      window.removeEventListener(TRANSCRIPTION_PROVIDER_CHANGE_EVENT, schedule);
-    };
-  }, [routeName]);
 }
 
 export interface ProjectStartupSource {

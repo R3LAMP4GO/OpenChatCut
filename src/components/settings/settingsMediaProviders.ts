@@ -20,11 +20,13 @@ const COMMON_TRANSCRIPTION_FIELDS: readonly SettingsField[] = [
     options: [
       { value: 'zh', label: '中文（zh）' },
       { value: 'en', label: '英语（en）' },
+      { value: 'it', label: '意大利语（it）' },
       { value: 'ja', label: '日语（ja）' },
       { value: 'ko', label: '韩语（ko）' },
       { value: 'es', label: '西班牙语（es）' },
       { value: 'fr', label: '法语（fr）' },
       { value: 'de', label: '德语（de）' },
+      { value: 'ru', label: '俄语（ru）' },
     ],
   },
   {
@@ -77,6 +79,7 @@ export const localAsrPage = transcriptionPage('local', 'localasr', '本地模型
       { value: 'base', label: 'Whisper Base（约 80MB · 均衡）' },
       { value: 'small', label: 'Whisper Small（约 250MB · 推荐）' },
       { value: 'medium', label: 'Whisper Medium（约 1.1GB · 精度最高）' },
+      { value: 'large-v3-turbo', label: 'Whisper Large v3 Turbo（约 1.1GB · 多语言最强）' },
     ],
   },
 ], '转写在本机完成：免费、离线、素材不出本机。模型按需下载（见下方列表），自动选择设备优势后端：WebGPU 不可用时回退 CPU。本地转写不含说话人分离（全部归为同一位说话人）。');
@@ -228,6 +231,8 @@ export const ROUTE_NEEDS: Record<string, readonly (readonly string[])[]> = {
   'gpt-image-2': [['IMAGE_API_KEY'], ['OPENAI_API_KEY']],
   'nano-banana': [['GEMINI_API_KEY']],
   'image-01': [['MINIMAX_API_KEY']],
+  'grok-imagine': [['LLM_XAI_OAUTH_API_KEY'], ['LLM_XAI_API_KEY']],
+  'grok-imagine-video': [['LLM_XAI_OAUTH_API_KEY'], ['LLM_XAI_API_KEY']],
   elevenlabs: [['ELEVENLABS_API_KEY']],
   doubao: [['DOUBAO_TTS_APP_ID', 'DOUBAO_TTS_ACCESS_KEY']],
   minimax: [['MINIMAX_API_KEY']],

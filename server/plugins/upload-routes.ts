@@ -11,6 +11,7 @@ import {
   uploadReadDirs,
 } from '../media-dir.ts';
 import { isIsolatedDevProfile } from '../runtime-profile.ts';
+import { listMediaReferences } from '../media-references.ts';
 import { sha256File } from '../../shared/node-content-hash.ts';
 import { editorCredentialAuthorized } from '../editor-auth.ts';
 import {
@@ -96,6 +97,11 @@ async function handleUploadList(req: IncomingMessage, res: ServerResponse): Prom
         if (!isSafeUploadName(name) || seen.has(name)) continue;
         const info = await stat(join(directory, name)).catch(() => null);
         if (info?.isFile()) seen.set(name, { name, bytes: info.size, mtimeMs: info.mtimeMs });
+      }
+      for (const reference of await listMediaReferences(directory)) {
+        if (isSafeUploadName(reference.name) && !seen.has(reference.name)) {
+          seen.set(reference.name, reference);
+        }
       }
     }
     sendJson(res, 200, { files: [...seen.values()].sort((a, b) => b.mtimeMs - a.mtimeMs) });
@@ -220,21 +226,37 @@ function requireEditorMutation(req: IncomingMessage, res: ServerResponse): boole
   return false;
 }
 
+/** Read gate: loopback + local Host (Origin optional — media element requests
+ * send none). GET paths previously skipped the Host invariant entirely, which
+ * left the media library enumerable/readable via DNS rebinding. */
+function requireEditorRead(req: IncomingMessage, res: ServerResponse): boolean {
+  if (editorCredentialAuthorized(req, false)) return true;
+  req.resume();
+  sendError(res, 403, 'local editor request required');
+  return false;
+}
+
 export function registerUploadRoutes(
   server: ViteDevServer,
   dependencies: UploadRouteDependencies = defaultUploadRouteDependencies,
 ): void {
   const logger = server.config.logger;
   void dependencies.syncLegacy((message) => logger.info(message));
-  server.middlewares.use('/media/uploads', (req, res, next) => (
-    handleMediaRead(req, res, next, logger, dependencies)
-  ));
-  server.middlewares.use('/upload/list', handleUploadList);
+  server.middlewares.use('/media/uploads', (req, res, next) => {
+    if (!requireEditorRead(req, res)) return;
+    handleMediaRead(req, res, next, logger, dependencies);
+  });
+  server.middlewares.use('/upload/list', (req, res) => {
+    if (requireEditorRead(req, res)) void handleUploadList(req, res);
+  });
   server.middlewares.use('/upload/hydrate', (req, res) => {
     if (requireEditorMutation(req, res)) void handleHydrate(req, res, logger, dependencies);
   });
   server.middlewares.use('/upload/presign', (req, res) => {
-    if (req.method !== 'POST' || requireEditorMutation(req, res)) void handlePresign(req, res);
+    const authorized = req.method === 'POST'
+      ? requireEditorMutation(req, res)
+      : requireEditorRead(req, res);
+    if (authorized) void handlePresign(req, res);
   });
   server.middlewares.use('/upload', (req, res) => { void handleUpload(req, res, logger); });
   server.middlewares.use('/api/import-url', (req, res) => {
