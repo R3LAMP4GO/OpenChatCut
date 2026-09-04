@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { kvDel, kvGet, kvGetFresh, kvRemoteMode, kvSet, resetSharedKvMemory } from './sharedKv';
+import { kvDel, kvGet, kvGetFresh, kvPurgeProject, kvRemoteMode, kvSet, resetSharedKvMemory } from './sharedKv';
 
 const MIGRATION_KEY = '__openchatcut_shared_store_v1__';
 const PENDING_KEYS_KEY = '__openchatcut_shared_pending_v1__';
@@ -247,6 +247,55 @@ try {
   assert.deepEqual(await kvGet('project:issue-63'), { name: 'resilient', version: 1 },
     'the degraded local save stays readable');
 
+  // A project delete cannot safely use the local fallback, but a shared-store
+  // startup failure may recover before the user retries the action.
+  let purgeCalls = 0;
+  const purgeEntries: Record<string, unknown> = {
+    projects: [{ id: 'retry-delete', name: 'Retry delete', updatedAt: 3 }],
+    'project:retry-delete': { version: 3 },
+  };
+  installGlobal('window', {
+    openChatCutDesktop: {
+      projectStore: async (request: unknown) => {
+        purgeCalls += 1;
+        if (purgeCalls === 1) throw new Error('project store is starting');
+        const input = request as { operation: string; key?: string; entries?: Record<string, unknown>; projectId?: string };
+        if (input.operation === 'entry') {
+          return input.key && Object.hasOwn(purgeEntries, input.key)
+            ? { found: true, value: purgeEntries[input.key] }
+            : { found: false };
+        }
+        if (input.operation === 'merge') {
+          Object.assign(purgeEntries, input.entries);
+          return { version: 1, entries: { ...purgeEntries } };
+        }
+        if (input.operation === 'purge-project' && input.projectId === 'retry-delete') {
+          delete purgeEntries['project:retry-delete'];
+          return { purged: true };
+        }
+        throw new Error(`unexpected retry request: ${input.operation}`);
+      },
+    },
+  });
+  local.clear();
+  local.set('projects', purgeEntries.projects);
+  local.set('project:retry-delete', purgeEntries['project:retry-delete']);
+  resetSharedKvMemory();
+  await kvPurgeProject('retry-delete');
+  assert.equal(local.has('project:retry-delete'), false,
+    'a recovered shared purge removes the local project document');
+  assert.equal(Object.hasOwn(purgeEntries, 'project:retry-delete'), false,
+    'a recovered shared purge removes the remote project document');
+
+  // Restore the offline state for the pending-write merge check below.
+  installGlobal('window', {
+    openChatCutDesktop: {
+      projectStore: async () => { throw new Error('project store lock guard is busy'); },
+    },
+  });
+  local.clear();
+  resetSharedKvMemory();
+  await kvSet('project:issue-63', { name: 'resilient', version: 1 });
   await kvSet('pending-setting', 'local-new');
   assert.deepEqual(local.get(PENDING_KEYS_KEY), ['project:issue-63', 'pending-setting'],
     'offline writes persist their pending keys');

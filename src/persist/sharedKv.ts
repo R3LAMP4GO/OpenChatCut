@@ -330,6 +330,15 @@ async function disableRemote(): Promise<void> {
   }
 }
 
+/** A project purge must never fall back to local-only state, but it may safely retry
+ * the shared-store bootstrap once after a transient startup or IPC failure. */
+async function reconnectRemoteForProjectPurge(): Promise<boolean> {
+  if (remoteCache || !canSync()) return !!remoteCache;
+  readyPromise = undefined;
+  await ready();
+  return !!remoteCache;
+}
+
 // Fresh reads hit the network, but a short TTL cache absorbs repeated reads
 // within one hydration (currentAgentSessionGeneration is consulted by
 // loadChat, the runtime sidecar and the recovery chain).
@@ -492,13 +501,13 @@ export async function kvSet(key: string, value: unknown): Promise<void> {
     return;
   }
   if (!projectStoreWriteCredential()) {
-    throw new Error('共享工程库为只读模式（未连接编辑器会话），修改未同步');
+    throw new Error('Shared project library is read-only (no editor session); changes were not synced.');
   }
   try {
     await requestProjectStore({ operation: 'set', key, value });
   } catch (error) {
     if (isAuthError(error)) {
-      throw new Error('共享工程库只读（编辑器会话失效），修改未同步');
+      throw new Error('Shared project library is read-only (editor session expired); changes were not synced.');
     }
     await disableRemote();
     await localSet(key, value);
@@ -519,18 +528,18 @@ export async function kvDel(key: string): Promise<void> {
   // Node memory fallback (no IndexedDB) keeps local semantics for checks.
   const requireSharedDelete = isProjectDocumentKey(key) && (canSync() || hasIdb());
   if (!remoteCache) {
-    if (requireSharedDelete) throw new Error('共享工程数据库暂时不可用，工程未删除');
+    if (requireSharedDelete) throw new Error('Shared project database is temporarily unavailable; project was not deleted.');
     await localDel(key);
     return;
   }
   if (isProjectDocumentKey(key) && !projectStoreWriteCredential()) {
-    throw new Error('共享工程库为只读模式（未连接编辑器会话），工程未删除');
+    throw new Error('Shared project library is read-only (no editor session); project was not deleted.');
   }
   try {
     await requestProjectStore({ operation: 'delete', key });
   } catch (error) {
     if (isAuthError(error) && isProjectDocumentKey(key)) {
-      throw new Error('共享工程库只读（编辑器会话失效），工程未删除');
+      throw new Error('Shared project library is read-only (editor session expired); project was not deleted.');
     }
     await disableRemote();
     if (requireSharedDelete) throw error;
@@ -561,8 +570,10 @@ function forgetRemoteProjectEntries(projectId: string): void {
 export async function kvPurgeProject(projectId: string): Promise<void> {
   await ready();
   const requireSharedDelete = canSync();
+  if (!remoteCache && requireSharedDelete && !await reconnectRemoteForProjectPurge()) {
+    throw new Error('Shared project database is temporarily unavailable; project was not deleted.');
+  }
   if (!remoteCache) {
-    if (requireSharedDelete) throw new Error('共享工程数据库暂时不可用，工程未删除');
     await purgeLocalProjectEntries(projectId);
     return;
   }

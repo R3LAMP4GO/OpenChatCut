@@ -103,3 +103,5 @@ public/whisper-cli/
 .npm-cache/
 # Root-level local runtime files
 /etc/
+# Local media fixture symlinks — never commit source recordings.
+/.local-fixtures/
