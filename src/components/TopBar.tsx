@@ -1,25 +1,38 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { theme } from '../theme';
 import { Icon } from './icons';
 import { ExportHistory } from './ExportHistory';
 import { GenerationActivity } from './GenerationActivity';
 import { SkinPicker } from './settings/SkinPicker';
-import { McpGuideDialog } from './settings/McpGuide';
-import { getLocale, setLocale, useT } from '../i18n/locale';
+import { loadMcpGuideDialog } from './settings/mcpGuideLoader';
+import { ALL_LOCALES, getLocale, setLocale, useT } from '../i18n/locale';
 import { invokeAction, bindAction } from '../shortcuts/actionRegistry';
 import { DesktopWindowControls } from './DesktopWindowControls';
 import { TopBarIconButton } from './TopBarIconButton';
 
-// Language switching: The text pill displays the current language, click to switch between Chinese and English.
+// Lazy, like the dashboard's copy of this dialog. A static import here put the
+// whole MCP guide into the editor's eager chunk and made every lazy() built on
+// loadMcpGuideDialog ineffective, dashboard included — both top bars have to go
+// through the thunk for either to be split.
+const McpGuideDialog = lazy(() => loadMcpGuideDialog().then((m) => ({ default: m.McpGuideDialog })));
+
+// Language switching: The text pill displays the current language; clicking
+// cycles through the supported locales. First run defaults to the
+// system language (or English) — see i18n/locale.ts.
 export function LocaleToggle() {
   const t = useT();
   const locale = getLocale();
+  const next = ALL_LOCALES[(ALL_LOCALES.indexOf(locale) + 1) % ALL_LOCALES.length]!;
   return (
-    <button className="cc-tip cc-tip-r" data-tip={t('切换界面语言')} aria-label={t('切换界面语言')} onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
+    <button
+      className="cc-tip cc-tip-r"
+      data-tip={t('切换界面语言')}
+      aria-label={t('切换界面语言')}
+      onClick={() => setLocale(next)}
       style={{ minWidth: 30, height: 22, background: 'none', border: `0.5px solid ${theme.border}`, borderRadius: 4, cursor: 'pointer', padding: '0 5px', fontSize: 11, fontWeight: 600, letterSpacing: 0.3, color: theme.textDim, display: 'grid', placeItems: 'center' }}
       onMouseEnter={(e) => { e.currentTarget.style.color = theme.text; e.currentTarget.style.background = theme.panelAlt; }}
       onMouseLeave={(e) => { e.currentTarget.style.color = theme.textDim; e.currentTarget.style.background = 'none'; }}>
-      {locale === 'zh' ? '中' : 'EN'}
+      {locale === 'zh' ? '中' : locale.toUpperCase()}
     </button>
   );
 }
@@ -67,7 +80,7 @@ export function TopBar({ projectId, projectName, canUndo, canRedo, exporting, ex
             onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
             style={{ font: 'inherit', fontSize: 14, textAlign: 'center', background: theme.panelAlt, color: theme.text, border: `0.5px solid ${theme.accent}`, borderRadius: 5, padding: '2px 8px', minWidth: 200 }} />
         ) : (
-          <span onDoubleClick={() => { if (onRename) { setDraft(projectName); setEditing(true); } }} title={onRename ? t('双击重命名') : undefined} style={{ cursor: onRename ? 'text' : 'default' }}>{t(projectName)}</span>
+          <span onDoubleClick={() => { if (onRename) { setDraft(projectName); setEditing(true); } }} title={onRename ? t('双击重命名') : undefined} style={{ cursor: onRename ? 'text' : 'default' }}>{projectName}</span>
         )}
       </div>
 
@@ -96,7 +109,11 @@ export function TopBar({ projectId, projectName, canUndo, canRedo, exporting, ex
       </button>
       <div title={t('账户')} style={{ width: 20, height: 20, borderRadius: '50%', marginLeft: 2, background: 'conic-gradient(from 210deg, #6d6cff, #ff5f9e, #ffb35f, #6d6cff)', flexShrink: 0 }} />
       </div>
-      {mcpOpen && <McpGuideDialog onClose={() => setMcpOpen(false)} />}
+      {/* No fallback: a dialog that is still loading shows nothing, exactly as it
+          did before it was opened — the same treatment the other overlays get. */}
+      <Suspense fallback={null}>
+        {mcpOpen && <McpGuideDialog onClose={() => setMcpOpen(false)} />}
+      </Suspense>
     </header>
   );
 }

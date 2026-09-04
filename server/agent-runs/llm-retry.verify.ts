@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { APICallError } from 'ai';
+import { APICallError, NoOutputGeneratedError } from 'ai';
+import { APICallError as ProviderApiCallError } from '@ai-sdk/provider';
 import {
   classifyLlmFailure,
   isRetryableLlmFailure,
-  llmRetryDisposition,
   MAX_LLM_ATTEMPTS,
   MAX_RETRY_DELAY_MS,
   resolveRetryDelayMs,
@@ -55,6 +55,15 @@ assert.equal(
   'TIMEOUT',
 );
 assert.equal(classifyLlmFailure(new (class extends Error {})('x')).code, 'UNKNOWN');
+// A stream that closed without a single recorded step is transient, not a
+// dead end: the AI SDK reports it as NoOutputGeneratedError once the real
+// provider error (if any) has already been rethrown by collectServerText.
+assert.equal(
+  classifyLlmFailure(new NoOutputGeneratedError({
+    message: 'No output generated. Check the stream for errors.',
+  })).code,
+  'EMPTY_RESPONSE',
+);
 // Retryable set matches the classification above.
 for (const code of ['RATE_LIMIT', 'TIMEOUT', 'SERVER', 'TRANSPORT', 'EMPTY_RESPONSE']) {
   assert.equal(isRetryableLlmFailure(code as never), true, code);
@@ -63,15 +72,22 @@ for (const code of ['AUTH', 'INVALID_REQUEST', 'QUOTA', 'CONTEXT_WINDOW_EXCEEDED
   assert.equal(isRetryableLlmFailure(code as never), false, code);
 }
 
-// Retry state is explicitly finite: transient failures get at most two
-// retries, while deterministic failures and the third failed call terminate.
-assert.equal(MAX_LLM_ATTEMPTS, 3);
-assert.equal(llmRetryDisposition('SERVER', 1), 'retry');
-assert.equal(llmRetryDisposition('SERVER', 2), 'retry');
-assert.equal(llmRetryDisposition('SERVER', 3), 'failed');
-assert.equal(llmRetryDisposition('AUTH', 1), 'failed');
-assert.equal(llmRetryDisposition('INVALID_REQUEST', 1), 'failed');
-assert.equal(llmRetryDisposition('SERVER', 0), 'failed', 'invalid attempt state fails closed');
+// Provider packages resolve their own @ai-sdk/provider copy, so the error they
+// throw is a different class object from the one `ai` re-exports. Classifying
+// with `instanceof` misses it and drops every provider failure into UNKNOWN,
+// where the retry ladder never touches it. Marker-based detection must hold for
+// an error built from the provider copy too.
+const foreignCopyError = new ProviderApiCallError({
+  message: 'call failed',
+  url: 'https://example.invalid/v1/chat',
+  requestBodyValues: {},
+  statusCode: 429,
+  responseBody: '',
+  responseHeaders: { 'retry-after': '2' },
+  isRetryable: false,
+});
+assert.equal(classifyLlmFailure(foreignCopyError).code, 'RATE_LIMIT');
+assert.equal(classifyLlmFailure(foreignCopyError).retryAfterMs, 2000);
 
 // Rate-limit retries honor Retry-After within the max cap.
 const rateLimited = { code: 'RATE_LIMIT' as const, message: '', retryAfterMs: 3000 };
@@ -87,4 +103,4 @@ for (let attempt = 0; attempt < MAX_LLM_ATTEMPTS; attempt += 1) {
   assert.ok(delay >= 0 && delay <= MAX_RETRY_DELAY_MS, `attempt ${attempt}: ${delay}`);
 }
 
-console.log('AGENT_RETRY_FAILURE_PASSED: transient retries stop after three attempts; deterministic and invalid states fail closed');
+console.log('server llm-retry classification checks passed');

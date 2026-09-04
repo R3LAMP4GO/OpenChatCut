@@ -1,7 +1,5 @@
 import {
-  jsonSchema,
   streamText,
-  tool,
   type LanguageModelUsage,
   type ModelMessage,
 } from 'ai';
@@ -19,7 +17,6 @@ import {
 } from '../../shared/model-capabilities';
 import { getKey } from '../keystore';
 import {
-  assertCanonicalToolInvocation,
   canonicalServerRunToolCatalog,
   resolveServerRunToolCatalog,
 } from './tool-policy';
@@ -29,7 +26,6 @@ import {
   type AgentContextUsage,
   type ContextPreparation,
 } from '../../src/agent/context-compaction';
-import { toolResultModelOutput } from '../../src/agent/tool-result-output';
 import { redactTextForAgentRuntime } from '../../src/agent/runtime-artifact';
 import type { AgentToolSchema } from '../../src/agent/tool-schema';
 import { ToolActivation } from '../../src/agent/tool-activation';
@@ -40,20 +36,27 @@ import {
   type ServerContextInput,
 } from './context';
 import {
-  digestToolArgs,
   pushRunEvent,
   recordServerContextUsage,
   setRunStatus,
-  waitForToolResult,
   type ServerRun,
 } from './store';
 import { classifyLlmFailure, runServerTurnWithRetry } from './llm-retry';
-import { toolExecutionMode } from '../../src/agent/tools/execution-modes';
+import { ToolFailureTracker } from '../../src/agent/toolFailure';
 import {
   collectServerText,
   resolveServerRunMaxOutputTokens,
   serverRunTextMetadata,
 } from './executor-events';
+import {
+  acceptanceInstructions,
+  createAcceptanceLoop,
+  decideAcceptanceAfterTurn,
+  turnDisposition,
+} from './acceptance-loop';
+import { createServerTools, type ActivationState } from './browser-tool';
+export { executeBrowserTool, type ActivationState } from './browser-tool';
+export { turnDisposition, type TurnDisposition } from './acceptance-loop';
 export {
   flushTextEvents,
   collectServerText,
@@ -66,15 +69,6 @@ function safeError(error: unknown): string {
   return redactTextForAgentRuntime(raw).trim().slice(0, 1_200)
     || 'Agent provider request failed.';
 }
-
-
-
-export interface ActivationState {
-  current: ToolActivation;
-  tail: Promise<void>;
-  followupText: string | null;
-}
-
 export interface ServerRunInput {
   readonly messages: ModelMessage[];
   readonly backend?: string;
@@ -83,6 +77,8 @@ export interface ServerRunInput {
   readonly openAiApiMode: OpenAiApiMode;
   readonly cacheMode: 'short' | 'long';
   readonly maxOutputTokens: number;
+  readonly autonomousAcceptance: boolean;
+  readonly maxAcceptanceIterations: number;
   readonly origin: string;
   readonly tools: readonly AgentToolSchema[];
   readonly instructions?: string;
@@ -92,82 +88,6 @@ type ServerTurnInput = Omit<ServerContextInput, 'schemas'> & {
   readonly activation: ActivationState;
   readonly requestIndex: number;
 };
-
-export async function executeBrowserTool(
-  run: ServerRun,
-  schema: AgentToolSchema,
-  args: Record<string, unknown>,
-  toolCallId: string,
-  activation: ActivationState,
-): Promise<unknown> {
-  const parallel = toolExecutionMode(schema.name) === 'parallel';
-  let release: (() => void) | undefined;
-  if (!parallel) {
-    const previous = activation.tail;
-    const { promise: next, resolve } = Promise.withResolvers<void>();
-    activation.tail = next;
-    release = resolve;
-    await previous;
-  }
-  try {
-    // A model may remember a tool from earlier in the conversation even when
-    // the current request did not activate it. Activation is a token
-    // optimization, not a security boundary: canonical membership (checked by
-    // assertCanonicalToolInvocation below) is what actually gates the call.
-    activation.current = activation.current.admit(schema.name);
-    assertCanonicalToolInvocation(schema, args, activation.current.schemas());
-    const argsDigest = digestToolArgs(args);
-    pushRunEvent(run, 'tool-request', {
-      toolCallId,
-      name: schema.name,
-      args,
-      argsDigest,
-    });
-    const delivered = await waitForToolResult(
-      run,
-      toolCallId,
-      schema.name,
-      argsDigest,
-    );
-    const followup = delivered && typeof delivered === 'object'
-      && '__followup' in delivered
-      && typeof delivered.__followup === 'string'
-      ? delivered.__followup
-      : null;
-    if (followup) activation.followupText = followup;
-    const shaped = activation.current.withToolResult(schema.name, delivered);
-    activation.current = shaped.activation;
-    return shaped.result;
-  } finally {
-    release?.();
-  }
-}
-
-function createServerTools(
-  run: ServerRun,
-  schemas: readonly AgentToolSchema[],
-  activation: ActivationState,
-) {
-  return Object.fromEntries(schemas.map((schema) => [schema.name, tool({
-    description: schema.description,
-    inputSchema: jsonSchema<Record<string, unknown>>(
-      schema.input_schema as Parameters<typeof jsonSchema<Record<string, unknown>>>[0],
-    ),
-    execute: (args: Record<string, unknown>, options: { toolCallId: string }) => (
-      executeBrowserTool(
-        run,
-        schema,
-        args,
-        options.toolCallId,
-        activation,
-      )
-    ),
-    toModelOutput: ({ output }) => toolResultModelOutput(
-      output,
-      schema.name === 'load_skill',
-    ),
-  })]));
-}
 
 function measuredContextUsage(
   prepared: ContextPreparation,
@@ -255,8 +175,9 @@ async function runServerTurnOnce(
     schemas.length,
     JSON.stringify(schemas).length,
   );
-  const continued = toolCalls.length > 0
-    || responseMessages.some((message) => message.role === 'tool');
+  const continued = !input.activation.repeatGuardNote && (
+    toolCalls.length > 0 || responseMessages.some((message) => message.role === 'tool')
+  );
   return {
     messages: continued
       ? [...prepared.messages, ...responseMessages]
@@ -300,7 +221,7 @@ function createExecutionPlan(run: ServerRun, input: ServerRunInput) {
   const maxInputTokens = capabilities.maxInputTokens.estimated
     ? Math.max(1, capabilities.contextWindowTokens.value - maxOutputTokens)
     : capabilities.maxInputTokens.value;
-  const activation = {
+  const activation: ActivationState = {
     current: new ToolActivation(
       canonicalServerRunToolCatalog(run.askOnly),
       input.messages,
@@ -308,13 +229,22 @@ function createExecutionPlan(run: ServerRun, input: ServerRunInput) {
     ),
     tail: Promise.resolve(),
     followupText: null,
+    toolFailures: new ToolFailureTracker(),
+    acceptance: createAcceptanceLoop(
+      input.autonomousAcceptance && !run.askOnly,
+      input.maxAcceptanceIterations,
+    ),
   };
-  const prompt = buildServerRunPrompt({
+  const basePrompt = buildServerRunPrompt({
     ...input,
     projectId: run.projectId,
     askOnly: run.askOnly,
     references: run.references,
   });
+  const prompt = {
+    ...basePrompt,
+    instructions: basePrompt.instructions + acceptanceInstructions(activation.acceptance.enabled),
+  };
   return {
     backend,
     provider,
@@ -335,21 +265,6 @@ function createExecutionPlan(run: ServerRun, input: ServerRunInput) {
   };
 }
 
-/** Keep parity with the browser and Codex runtimes: one run may use at most 30 tool turns. */
-export const MAX_SERVER_RUN_TURNS = 30;
-/** What the loop does after one turn, extracted for deterministic checks. */
-export type TurnDisposition = 'continue' | 'completed' | 'max-tokens' | 'max-turns';
-export function turnDisposition(
-  hitMaxTokens: boolean,
-  continued: boolean,
-  completedTurns = 1,
-  maxTurns = MAX_SERVER_RUN_TURNS,
-): TurnDisposition {
-  if (hitMaxTokens) return 'max-tokens';
-  if (!continued) return 'completed';
-  return completedTurns >= maxTurns ? 'max-turns' : 'continue';
-}
-
 async function executeRunTurns(
   run: ServerRun,
   input: ServerRunInput,
@@ -357,9 +272,10 @@ async function executeRunTurns(
 ): Promise<void> {
   const plan = createExecutionPlan(run, input);
   let messages = plan.prompt.messages;
-  // Finite tool loop: no provider/model output can trigger more than the shared
-  // 30-turn ceiling. Transient provider retries are separately capped at three.
-  for (let turn = 0; turn < MAX_SERVER_RUN_TURNS; turn += 1) {
+  // No turn cap: the model decides when the task is done. The only automatic
+  // stop beside "no more tool calls" is an output-token cutoff, which would
+  // otherwise feed truncated text back into the loop.
+  for (let turn = 0; ; turn += 1) {
     const outcome = await runServerTurnWithRetry(run, turn + 1, signal, () =>
       plan.backend === 'codex'
         ? (async () => (await import('./codex-turn')).executeServerCodexTurn({
@@ -396,6 +312,13 @@ async function executeRunTurns(
         }),
     );
     if (outcome.followupText) {
+      if (plan.activation.acceptance.phase === 'checking') {
+        pushRunEvent(run, 'acceptance', {
+          status: 'paused',
+          iteration: plan.activation.acceptance.iteration,
+          maxIterations: plan.activation.acceptance.maxIterations,
+        });
+      }
       pushRunEvent(run, 'text-delta', { text: outcome.followupText });
       pushRunEvent(run, 'text-end', serverRunTextMetadata(outcome.followupText));
       pushRunEvent(run, 'finish', serverRunTextMetadata(outcome.followupText));
@@ -403,16 +326,56 @@ async function executeRunTurns(
       return;
     }
     messages = outcome.messages;
-    const completedTurns = turn + 1;
-    const disposition = turnDisposition(outcome.hitMaxTokens, outcome.continued, completedTurns);
+    const disposition = turnDisposition(
+      outcome.hitMaxTokens,
+      outcome.continued,
+      plan.activation.toolFailures.hasUnresolved,
+    );
     if (disposition === 'continue') continue;
-    if (disposition === 'max-tokens') pushRunEvent(run, 'max-tokens', { turn: completedTurns });
-    if (disposition === 'max-turns') pushRunEvent(run, 'max-turns', { turns: completedTurns });
-    pushRunEvent(run, 'finish', serverRunTextMetadata(outcome.text));
+    if (disposition === 'max-tokens') {
+      pushRunEvent(run, 'max-tokens', { turn: turn + 1 });
+    }
+    if (disposition === 'failed') {
+      throw new Error(plan.activation.toolFailures.report());
+    }
+    if (disposition === 'completed') {
+      const acceptance = decideAcceptanceAfterTurn(plan.activation.acceptance);
+      plan.activation.acceptance = acceptance.state;
+      if (acceptance.action === 'continue') {
+        pushRunEvent(run, 'acceptance', {
+          status: 'checking',
+          iteration: acceptance.state.iteration,
+          maxIterations: acceptance.state.maxIterations,
+        });
+        messages = [...messages, acceptance.message];
+        continue;
+      }
+      if (acceptance.action === 'fail') {
+        pushRunEvent(run, 'acceptance', {
+          status: 'failed',
+          iteration: acceptance.state.iteration,
+          maxIterations: acceptance.state.maxIterations,
+          reason: acceptance.reason,
+        });
+        throw new Error(acceptance.reason);
+      }
+      if (acceptance.status === 'passed') {
+        pushRunEvent(run, 'acceptance', {
+          status: 'passed',
+          iteration: acceptance.state.iteration,
+          maxIterations: acceptance.state.maxIterations,
+        });
+      }
+    }
+    pushRunEvent(run, 'finish', {
+      ...serverRunTextMetadata(outcome.text),
+      ...(plan.activation.repeatGuardNote
+        ? { guard: plan.activation.repeatGuardNote }
+        : {}),
+    });
     await setRunStatus(run, 'completed');
     return;
   }
-  throw new Error('agent turn loop exhausted without a terminal disposition');
 }
 
 async function settleRunFailure(

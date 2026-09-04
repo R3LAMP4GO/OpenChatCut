@@ -2,8 +2,26 @@
   "version": 1,
   "edit": [
     {
+      "name": "export_jianying_draft",
+      "description": "Export the current timeline as a CapCut/JianYing draft (via capcut-cli). The draft appears in the CapCut/JianYing project list; open it there to review and render. Only call this when the user explicitly confirms the export.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "draftName": {
+            "type": "string",
+            "description": "Draft name shown in CapCut/JianYing. Defaults to a timestamped name."
+          },
+          "draftsDir": {
+            "type": "string",
+            "description": "Optional draft store directory override (defaults to the CapCut store)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "read_timeline",
-      "description": "Read the current timeline: fps and every clip (id, track, name, startFrame, durationInFrames, props). Call this first to see current state before editing.",
+      "description": "Read the current timeline: fps and every clip, including canonical media linkage (sourceAssetId, resolvedSourceAssetId, linkStatus), exact source window (srcInFrame, sourceStartFrame, sourceDurationInFrames, sourceEndFrameExclusive), and editable state (keyframes, transform, filters, volume, fades). Call this first to see current state before editing.",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -254,18 +272,26 @@
           },
           "durationSeconds": {
             "type": "number",
+            "minimum": 0.5,
+            "maximum": 600,
             "description": "Duration in seconds (default 3)."
           },
           "durationInFrames": {
             "type": "number",
+            "minimum": 15,
+            "maximum": 36000,
             "description": "Duration in frames (overrides durationSeconds when set)."
           },
           "width": {
             "type": "number",
+            "minimum": 16,
+            "maximum": 8192,
             "description": "Natural width px (default 1920)."
           },
           "height": {
             "type": "number",
+            "minimum": 16,
+            "maximum": 8192,
             "description": "Natural height px (default 1080)."
           }
         },
@@ -294,16 +320,24 @@
           },
           "durationSeconds": {
             "type": "number",
+            "minimum": 0.5,
+            "maximum": 600,
             "description": "Duration in seconds (default 3)."
           },
           "durationInFrames": {
-            "type": "number"
+            "type": "number",
+            "minimum": 15,
+            "maximum": 36000
           },
           "width": {
-            "type": "number"
+            "type": "number",
+            "minimum": 16,
+            "maximum": 8192
           },
           "height": {
-            "type": "number"
+            "type": "number",
+            "minimum": 16,
+            "maximum": 8192
           }
         },
         "required": [
@@ -973,79 +1007,8 @@
       }
     },
     {
-      "name": "read_segment_plan",
-      "description": "Read sentence-bound transcript segments with stable composite IDs and a revision. Use these IDs for bounded semantic decisions; timing remains deterministic. Results are paged.",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "track": {
-            "type": "string",
-            "description": "Optional transcript track ID/alias. Defaults to the first track containing a current transcript."
-          },
-          "offset": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Segment offset. Default 0."
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 200,
-            "description": "Maximum segments. Default 100, max 200."
-          }
-        }
-      }
-    },
-    {
-      "name": "apply_segment_plan",
-      "description": "Deterministically apply a bounded semantic segment decision as one undoable batch. Validates revision, stable IDs, whole-sentence boundaries, duplicates, ordering, and track safety.",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "track": {
-            "type": "string",
-            "description": "Transcript track ID/alias used for read_segment_plan."
-          },
-          "revision": {
-            "type": "string",
-            "description": "Exact revision returned by read_segment_plan."
-          },
-          "keepSegmentIds": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 500,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            },
-            "description": "Stable segment IDs to retain."
-          },
-          "order": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 500,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            },
-            "description": "Optional exact permutation of keepSegmentIds."
-          },
-          "preview": {
-            "type": "boolean",
-            "description": "When true, validate and return the deterministic action summary without mutation."
-          }
-        },
-        "required": [
-          "revision",
-          "keepSegmentIds"
-        ]
-      }
-    },
-    {
       "name": "view_timeline_frames",
-      "description": "Render still frames of one timeline composition (pending/draft edits included). frames and seconds are ABSOLUTE TIMELINE coordinates, not source-media positions. Use after visual edits (MG/text, transitions, zoom, filters, aspect, captions) to verify the composed result. Provide exact coordinates or count; with neither, samples evenly (default 4, max 16). Multi-frame results are one labeled contact sheet when possible.",
+      "description": "Render still frames of one timeline composition (pending/draft edits included). frames and seconds are ABSOLUTE TIMELINE coordinates, not source-media positions. Use after visual edits (MG/text, transitions, zoom, filters, aspect, captions) to verify the composed result. Provide exact coordinates or count; with neither, samples evenly (default 4, max 8). Multi-frame results are one labeled contact sheet when possible.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -1054,6 +1017,7 @@
             "items": {
               "type": "number"
             },
+            "maxItems": 8,
             "description": "Absolute timeline frame numbers to render."
           },
           "seconds": {
@@ -1061,11 +1025,14 @@
             "items": {
               "type": "number"
             },
+            "maxItems": 8,
             "description": "Absolute timeline seconds (converted by timeline fps)."
           },
           "count": {
             "type": "number",
-            "description": "Even midpoints across the timeline/range (default 4, max 16)."
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Even midpoints across the timeline/range (default 4, max 8)."
           },
           "fromSeconds": {
             "type": "number",
@@ -1084,7 +1051,7 @@
     },
     {
       "name": "view_asset_frames",
-      "description": "Inspect SOURCE media and see a labeled contact sheet; these coordinates never refer to the composed timeline. Pass assetId for the full pool source, or itemId to constrain sampling to that placed clip’s visible source window (srcInFrame + playbackRate aware). sourceTimesMs, frames, seconds, and fromSeconds/toSeconds are all SOURCE-MEDIA coordinates. With itemId, samples are clamped to its visible source window. Use for source selection/quality inspection; use view_timeline_frames for composed timeline proof. Audio has no frames. Default broad scan = 12 source-window midpoints, max 16. Finalized uploaded video prefers ffmpeg; blob/image/MG paths use browser or Remotion rendering.",
+      "description": "Inspect SOURCE media and see a labeled contact sheet; these coordinates never refer to the composed timeline. Pass assetId for the full pool source, or itemId to constrain sampling to that placed clip’s visible source window (srcInFrame + playbackRate aware). sourceTimesMs, frames, seconds, and fromSeconds/toSeconds are all SOURCE-MEDIA coordinates. With itemId, samples are clamped to its visible source window. Use for source selection/quality inspection; use view_timeline_frames for composed timeline proof. Audio has no frames. Default broad scan = 6 source-window midpoints, max 8. Reuse the contact sheet instead of repeatedly sampling the same range. Finalized uploaded video prefers ffmpeg; blob/image/MG paths use browser or Remotion rendering.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -1105,13 +1072,15 @@
             "items": {
               "type": "number"
             },
-            "description": "Millisecond offsets in source-media time. Accepts 1–16 values."
+            "maxItems": 8,
+            "description": "Millisecond offsets in source-media time. Accepts 1–8 values."
           },
           "frames": {
             "type": "array",
             "items": {
               "type": "number"
             },
+            "maxItems": 8,
             "description": "Source-media frame numbers (project/source timebase)."
           },
           "seconds": {
@@ -1119,11 +1088,14 @@
             "items": {
               "type": "number"
             },
+            "maxItems": 8,
             "description": "Source-media seconds."
           },
           "count": {
             "type": "number",
-            "description": "Even source-window midpoints (default 12 for video, max 16)."
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Even source-window midpoints (default 6 for video, max 8)."
           },
           "fromSeconds": {
             "type": "number",
@@ -1176,7 +1148,7 @@
     },
     {
       "name": "submit_image",
-      "description": "Generate one or more AI images (gpt-image-2, nano-banana, MiniMax image-01, WaveSpeed, or BytePlus Seedream), save them to the project media pool, and optionally propose adding them to the active timeline. Call only when the user explicitly requested the generation.",
+      "description": "Generate one or more AI images (gpt-image-2, nano-banana, MiniMax image-01, WaveSpeed, BytePlus Seedream, or xAI Grok Imagine), save them to the project media pool, and optionally propose adding them to the active timeline. Call only when the user explicitly requested the generation.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -1187,9 +1159,10 @@
               "nano-banana",
               "image-01",
               "wavespeed",
-              "byteplus"
+              "byteplus",
+              "grok-imagine"
             ],
-            "description": "gpt-image-2 is the default; nano-banana is best for reference-heavy work; image-01 is MiniMax (at most 9 outputs; one subject reference when R2 is configured); wavespeed is WaveSpeed AI (fast generic image models, no references); byteplus is BytePlus ModelArk Seedream (no references yet)."
+            "description": "gpt-image-2 is the default; nano-banana is best for reference-heavy work; image-01 is MiniMax (at most 9 outputs; one subject reference when R2 is configured); wavespeed is WaveSpeed AI (fast generic image models, no references); byteplus is BytePlus ModelArk Seedream (no references yet); grok-imagine is xAI Grok Imagine (text-to-image only, no references, at most 4 outputs, 1K/2K)."
           },
           "prompt": {
             "type": "string",
@@ -1938,7 +1911,7 @@
     },
     {
       "name": "submit_video",
-      "description": "Submit a Seedance 2.0, Kling, MiniMax Hailuo, or BytePlus Seedance video generation job and create one video asset in the project media pool. Does not place the video on the timeline. Keep image, video, and audio references in their matching arrays.",
+      "description": "Submit a Seedance 2.0, Kling, MiniMax Hailuo, BytePlus Seedance, or xAI Grok Imagine video generation job and create one video asset in the project media pool. Does not place the video on the timeline. Keep image, video, and audio references in their matching arrays.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -1948,9 +1921,10 @@
               "seedance2",
               "kling",
               "hailuo",
-              "byteplus"
+              "byteplus",
+              "grok-imagine-video"
             ],
-            "description": "hailuo is MiniMax: 6 or 10s; firstFrame optional; lastFrame allowed with firstFrame; no multi-ref or multi-shot. 1080p is 6s only. byteplus is BytePlus ModelArk Seedance — same request shape/limits as seedance2."
+            "description": "hailuo is MiniMax: 6 or 10s; firstFrame optional; lastFrame allowed with firstFrame; no multi-ref or multi-shot. 1080p is 6s only. byteplus is BytePlus ModelArk Seedance — same request shape/limits as seedance2. grok-imagine-video is xAI Grok Imagine: text-to-video only, 1–15s, audio track included, no references/frames."
           },
           "prompt": {
             "type": "string",
@@ -1968,11 +1942,11 @@
                 "type": "string"
               }
             ],
-            "description": "Integer seconds, 2–15 for Seedance, 3–15 for Kling, exactly 6 or 10 for Hailuo (Hailuo 1080p → 6 only)."
+            "description": "Integer seconds, 2–15 for Seedance, 3–15 for Kling, exactly 6 or 10 for Hailuo (Hailuo 1080p → 6 only), 1–15 for grok-imagine-video."
           },
           "ratio": {
             "type": "string",
-            "description": "Seedance: 16:9, 4:3, 1:1, 3:4, 9:16, 21:9, adaptive. Kling: 16:9, 9:16, 1:1. Do not send for hailuo."
+            "description": "Seedance: 16:9, 4:3, 1:1, 3:4, 9:16, 21:9, adaptive. Kling: 16:9, 9:16, 1:1. grok-imagine-video: 16:9, 9:16, 1:1, 4:3, 3:4, 3:2, 2:3. Do not send for hailuo."
           },
           "resolution": {
             "type": "string",
@@ -1983,7 +1957,7 @@
               "1080p",
               "4k"
             ],
-            "description": "Seedance: 480p/720p(default)/1080p/4k. Hailuo: 512p (Hailuo-02), 720p→API 768P, 1080p (6s only). Kling: pair with mode std/pro."
+            "description": "Seedance: 480p/720p(default)/1080p/4k. Hailuo: 512p (Hailuo-02), 720p→API 768P, 1080p (6s only). Kling: pair with mode std/pro. grok-imagine-video: 480p(default)/720p/1080p."
           },
           "mode": {
             "type": "string",
@@ -2326,20 +2300,20 @@
     },
     {
       "name": "edit_item",
-      "description": "Unified item-level operations across video, image, audio, gif, svg, motion-graphic, text, solid, effect, and transition types. adds place library items (effect/transition/zoom/MG/SFX), a POOL asset as a clip (type=video|image|gif|svg|audio, assetId=…), OR authored clips without assetId: type=text (text/fontSize/color/fontWeight/align?) or type=solid (color?). updates move/trim/retime by itemId|id — NEVER pass assetId on update (rejected). To replace media: one batch deletes:[{id}] + adds:[{type,assetId,fromFrame,durationInFrames,trackId,…copied layout}]. fromFrame is the canonical timing field (startFrame is accepted as an alias). Unknown fields reject the entire call with \"unknown field\" + Did you mean. Entries run in adds→updates→deletes order against one private draft; only a fully valid/applied draft is published once. Any validator or draft-apply failure discards it with no partial timeline state. validateOnly runs that same sequential draft without publishing. Mutating calls then go through propose→apply. split_item cuts clips.",
+      "description": "Unified item-level operations across video, image, audio, gif, svg, motion-graphic, text, solid, effect, and transition types. Flex crop (flexcrop) is a spatial inset crop — not a timeline trim. Use edit_item updates.transform.crop or transform.flexCrop {left?,right?,top?,bottom?} in composition pixels (Crop Left/Right 0..canvas width, Crop Top/Bottom 0..canvas height; cropped pixels are fully transparent; null clears). The user does not need to say \"one pass\", \"do not recheck frames\", or \"do not use run_code\" — those are the default. \"Keep only the dashboard/panel/region\" = crop the selected clip (omit itemId or pass \"selected\") so only that region remains, then stop. Set every needed edge in one update. Do not call run_code, probe_media, e2b, or edit_asset. adds place library items (effect/transition/zoom/MG/SFX), a POOL asset as a clip (type=video|image|gif|svg|audio, assetId=…), OR authored clips without assetId: type=text (text/fontSize/color/fontWeight/align?) or type=solid (color?). updates move/trim/retime by itemId|id. Omit itemId or pass \"selected\" to target the inspector selection (read_project.timeline.selectedId). If the user names the selected clip, do not pick a neighboring track. Video aliases are bottom-up (V1 = bottom video). Passing assetId on a file-backed clip atomically replaces it from the media pool while preserving item id, track, timeline start, duration, and visual/audio edit state. fromFrame is the canonical timing field (startFrame is accepted as an alias). Unknown fields reject the entire call with \"unknown field\" + Did you mean. Entries run in adds→updates→deletes order against one private draft; only a fully valid/applied draft is published once. Any validator or draft-apply failure discards it with no partial timeline state. validateOnly runs that same sequential draft without publishing. Mutating calls then go through propose→apply. split_item cuts clips.",
       "input_schema": {
         "type": "object",
         "properties": {
           "adds": {
             "type": "array",
-            "description": "effect: {type,targetItemId,assetId,propertyOverrides?}. transition: {type,assetId,incomingItemId,outgoingItemId?,durationInFrames?}. motion-graphic: {type,assetId:library:motion-graphic:*,track?,fromFrame|startFrame?}. audio SFX: {type:\"audio\",assetId:library:sound:*,fromFrame?}. POOL media B-roll (video/image/gif/svg/audio): {type,assetId,track|trackId?,fromFrame|startFrame?,durationInFrames?} — no name/props on pool adds (then update_item_props). Use type:\"audio\" with a video pool asset to create a raw audio-only timeline copy for J/L cuts; mute the overlapping video audio to prevent doubling. Source-window add (video/audio/gif): {type,assetId,sourceStartMs?,sourceEndMs?,sourceStartSeconds?,sourceEndSeconds?,track?,fromFrame?} — pass search_media hit *Ms fields through unchanged; use either milliseconds or seconds for each bound, never both. The tool converts to frames; do NOT combine source windows with durationInFrames/srcInFrame, and do not multiply by fps yourself. Authored text: {type:\"text\",text,name?,track?,fromFrame?,durationInFrames?,fontSize?,color?,fontWeight?,align?}. Authored solid: {type:\"solid\",color?,name?,track?,fromFrame?,durationInFrames?}.",
+            "description": "effect: {type,targetItemId,assetId,propertyOverrides?}. transition: {type,assetId,incomingItemId,outgoingItemId?,durationInFrames?}. motion-graphic: {type,assetId:library:motion-graphic:*,track?,fromFrame|startFrame?}. audio SFX: {type:\"audio\",assetId:library:sound:*,fromFrame?}. POOL media B-roll (video/image/gif/svg/audio): {type,assetId,track|trackId?,fromFrame|startFrame?,durationInFrames?} — no name/props on pool adds (then update_item_props). Source-window add accepts exact frames {sourceStartFrame?,sourceDurationInFrames?} or time bounds {sourceStartMs?,sourceEndMs?,sourceStartSeconds?,sourceEndSeconds?}; use one representation and do not combine it with durationInFrames/srcInFrame. Authored text: {type:\"text\",text,name?,track?,fromFrame?,durationInFrames?,fontSize?,color?,fontWeight?,align?}. Authored solid: {type:\"solid\",color?,name?,track?,fromFrame?,durationInFrames?}.",
             "items": {
               "type": "object"
             }
           },
           "updates": {
             "type": "array",
-            "description": "Generic clip update — type MUST be the item's actual kind, one of: video, audio, image, gif, svg, text, solid, motion-graphic. NEVER write the literal \"generic\" or \"clip\" as type — they are rejected (\"update type not supported\"). Shape: {type,itemId|id,track|trackId?,fromFrame|startFrame?,durationInFrames?,srcInFrame?,props?,volume?,fadeInSeconds?,fadeOutSeconds?,keyframes?,clearKeyframes?,filters?,transform?,backgroundFill?,backgroundFillStrength?,speed|playbackRate?}. Explicit slip: {operation:\"slip\",itemId|id,deltaInFrames}; positive moves the source window later, negative earlier, while timeline placement/duration stay fixed. The result reports appliedDeltaInFrames, srcInFrame, sourceWindow, clamped/status, or a structured code for unknown/invalid inputs. Media source ops: {operation:\"replace_media\",itemId,src} bakes/swaps the clip to a video shell at the same slot; {operation:\"relink_media\",itemId,src,name?,durationInFrames?,width?,height?} clip-only relink (detaches pool master — use manage_media_pool relink_asset to update pool + all clips). Do NOT set assetId (use deletes+adds to place a different pool asset). keyframes: {x|y|scale|rotation|opacity|volume:[{frame,value,easing?}]} item-local frames; clearKeyframes:true clears all, or clearKeyframes:\"opacity\" for one prop. filters: {brightness?,contrast?,saturate? 0..2 (1=normal), blur? 0..30 px} on visual clips. transform: {scale? 0.05..16, x?/y? % of canvas, rotation? deg, opacity? 0..1, borderRadius?}. backgroundFill:true fills unused canvas with a blurred copy; backgroundFillStrength sets an exact integer percentage from 0 to 100 and enables the fill when used alone. Only video/image clips on the bottom video track (V1). speed/playbackRate: 0.1..8 on video/audio/gif (retimes duration). No CSS layout fields (left/right/top/bottom/width/height) — position clips via transform or keyframes x/y; layout INSIDE an MG belongs in its code/props. effect/transition/zoom updates as before (effect assetId swap is for FX stack, not clip media).",
+            "description": "Generic clip update — type MUST be the item's actual kind, one of: video, audio, image, gif, svg, text, solid, motion-graphic. NEVER write the literal \"generic\" or \"clip\" as type — they are rejected (\"update type not supported\"). Shape: {type,itemId|id,track|trackId?,fromFrame|startFrame?,durationInFrames?,srcInFrame|sourceStartFrame?,sourceDurationInFrames?,props?,volume?,fadeInSeconds?,fadeOutSeconds?,keyframes?,clearKeyframes?,filters?,transform?,backgroundFill?,backgroundFillStrength?,speed|playbackRate?}. Exact pool replacement: {type,itemId|id,assetId,sourceStartFrame?,sourceDurationInFrames?}; default replacement keeps the original timeline duration and resets the new source in-point to zero. Explicit slip: {operation:\"slip\",itemId|id,deltaInFrames}; positive moves the source window later, negative earlier, while timeline placement/duration stay fixed. The result reports appliedDeltaInFrames, srcInFrame, sourceWindow, clamped/status, or a structured code for unknown/invalid inputs. Media source ops: {operation:\"replace_media\",itemId,src} bakes/swaps the clip to a video shell at the same slot; {operation:\"relink_media\",itemId,src,name?,durationInFrames?,width?,height?} clip-only relink (detaches pool master — use manage_media_pool relink_asset to update pool + all clips). keyframes: {x|y|scale|rotation|opacity|volume:[{frame,value,easing?}]} item-local frames; easing is stored on the left keyframe and controls the following interval. It accepts linear/easeIn/easeOut/easeInOut and CSS aliases ease-in/ease-out/ease-in-out. clearKeyframes:true clears all, or clearKeyframes:\"opacity\" for one prop. filters: {brightness?,contrast?,saturate? 0..2 (1=normal), blur? 0..30 px} on visual clips. transform: {scale? 0.05..16, x?/y? % of canvas, rotation? deg, opacity? 0..1, borderRadius?, crop?|flexCrop?: {left?,right?,top?,bottom?} composition pixels}. Flex crop (flexcrop) = Crop Left/Right/Top/Bottom; left/right 0..canvas width px, top/bottom 0..canvas height px; cropped pixels are fully transparent; null clears. backgroundFill:true fills unused canvas with a blurred copy; backgroundFillStrength sets an exact integer percentage from 0 to 100 and enables the fill when used alone. Only video/image clips on the bottom video track (V1). speed/playbackRate: 0.1..8 on video/audio/gif (retimes duration). No CSS layout fields (left/right/top/bottom/width/height) — position clips via transform or keyframes x/y; flex crop belongs in transform.crop or transform.flexCrop, not top-level left/right/top/bottom. layout INSIDE an MG belongs in its code/props. effect/transition/zoom updates as before (effect assetId swap is for FX stack, not clip media).",
             "items": {
               "type": "object"
             }
@@ -2365,95 +2339,6 @@
           }
         },
         "additionalProperties": false
-      }
-    },
-    {
-      "name": "plan_split_edit",
-      "description": "Build a deterministic, read-only J-cut or L-cut plan. Validates adjacency, source handles, track locks, audio overlap, source alignment, and duplicate-audio prevention. Returns planRef for apply_split_edit.",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "j-cut",
-              "l-cut"
-            ],
-            "description": "j-cut: incoming audio leads picture. l-cut: outgoing audio continues after picture."
-          },
-          "outgoingId": {
-            "type": "string",
-            "description": "Outgoing video item ID."
-          },
-          "incomingId": {
-            "type": "string",
-            "description": "Incoming adjacent video item ID."
-          },
-          "durationSeconds": {
-            "type": "number",
-            "minimum": 0.1,
-            "maximum": 5,
-            "description": "Audio lead/tail duration in seconds; quantized to timeline frames."
-          },
-          "audioTrack": {
-            "type": "string",
-            "description": "Optional compatible audio track ID/alias. Defaults to the first unlocked non-overlapping audio track."
-          }
-        },
-        "required": [
-          "type",
-          "outgoingId",
-          "incomingId",
-          "durationSeconds"
-        ]
-      }
-    },
-    {
-      "name": "apply_split_edit",
-      "description": "Recompute and atomically apply a deterministic J-cut or L-cut plan. Requires the fresh planRef from plan_split_edit and rejects stale timeline state.",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "j-cut",
-              "l-cut"
-            ],
-            "description": "j-cut: incoming audio leads picture. l-cut: outgoing audio continues after picture."
-          },
-          "outgoingId": {
-            "type": "string",
-            "description": "Outgoing video item ID."
-          },
-          "incomingId": {
-            "type": "string",
-            "description": "Incoming adjacent video item ID."
-          },
-          "durationSeconds": {
-            "type": "number",
-            "minimum": 0.1,
-            "maximum": 5,
-            "description": "Audio lead/tail duration in seconds; quantized to timeline frames."
-          },
-          "audioTrack": {
-            "type": "string",
-            "description": "Optional compatible audio track ID/alias. Defaults to the first unlocked non-overlapping audio track."
-          },
-          "planRef": {
-            "type": "string",
-            "description": "Opaque planRef returned by plan_split_edit."
-          }
-        },
-        "required": [
-          "type",
-          "outgoingId",
-          "incomingId",
-          "durationSeconds",
-          "planRef"
-        ]
       }
     },
     {
@@ -2992,444 +2877,6 @@
       }
     },
     {
-      "name": "plan_shortform_clips",
-      "description": "Validate and preview AI-selected short-form candidates without mutation. Deterministically snaps to transcript words, computes preset-weighted scores, penalizes misleading/incomplete excerpts, removes overlaps, enforces durations, and returns candidate IDs plus a stale-state planRef. This ranks candidates; it does not predict or guarantee virality.",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "preset": {
-            "type": "string",
-            "enum": [
-              "curiosity",
-              "contrarian",
-              "high-value",
-              "emotional",
-              "story",
-              "newsworthy"
-            ]
-          },
-          "ratio": {
-            "type": "string",
-            "enum": [
-              "9:16",
-              "16:9",
-              "1:1",
-              "4:3",
-              "3:4"
-            ]
-          },
-          "maxClips": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10
-          },
-          "minSeconds": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 180
-          },
-          "maxSeconds": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 180
-          },
-          "candidates": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 30,
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "sourceItemId": {
-                  "type": "string",
-                  "description": "Exact transcribed source item ID."
-                },
-                "startWordIndex": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "endWordIndex": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "title": {
-                  "type": "string",
-                  "maxLength": 100
-                },
-                "reason": {
-                  "type": "string",
-                  "maxLength": 500
-                },
-                "scores": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "hookStrength": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "curiosity": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "contextCompleteness": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "payoff": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "specificity": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "emotion": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "visualSupport": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "misleadingPenalty": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "incompletePenalty": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    }
-                  },
-                  "required": [
-                    "hookStrength",
-                    "curiosity",
-                    "contextCompleteness",
-                    "payoff",
-                    "specificity",
-                    "emotion",
-                    "visualSupport",
-                    "misleadingPenalty",
-                    "incompletePenalty"
-                  ]
-                }
-              },
-              "required": [
-                "sourceItemId",
-                "startWordIndex",
-                "endWordIndex",
-                "title",
-                "reason",
-                "scores"
-              ]
-            }
-          }
-        },
-        "required": [
-          "preset",
-          "candidates"
-        ]
-      }
-    },
-    {
-      "name": "apply_shortform_clips",
-      "description": "Atomically create only approved candidates from a fresh plan_shortform_clips preview. Duplicates the source timeline, trims to word timestamps, creates transcript captions, uses content-safe contain framing, preserves source references, and rejects stale plans. One call is one undoable project change.",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "preset": {
-            "type": "string",
-            "enum": [
-              "curiosity",
-              "contrarian",
-              "high-value",
-              "emotional",
-              "story",
-              "newsworthy"
-            ]
-          },
-          "ratio": {
-            "type": "string",
-            "enum": [
-              "9:16",
-              "16:9",
-              "1:1",
-              "4:3",
-              "3:4"
-            ]
-          },
-          "maxClips": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10
-          },
-          "minSeconds": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 180
-          },
-          "maxSeconds": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 180
-          },
-          "candidates": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 30,
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "sourceItemId": {
-                  "type": "string",
-                  "description": "Exact transcribed source item ID."
-                },
-                "startWordIndex": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "endWordIndex": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "title": {
-                  "type": "string",
-                  "maxLength": 100
-                },
-                "reason": {
-                  "type": "string",
-                  "maxLength": 500
-                },
-                "scores": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "hookStrength": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "curiosity": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "contextCompleteness": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "payoff": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "specificity": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "emotion": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "visualSupport": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "misleadingPenalty": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    },
-                    "incompletePenalty": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 10
-                    }
-                  },
-                  "required": [
-                    "hookStrength",
-                    "curiosity",
-                    "contextCompleteness",
-                    "payoff",
-                    "specificity",
-                    "emotion",
-                    "visualSupport",
-                    "misleadingPenalty",
-                    "incompletePenalty"
-                  ]
-                }
-              },
-              "required": [
-                "sourceItemId",
-                "startWordIndex",
-                "endWordIndex",
-                "title",
-                "reason",
-                "scores"
-              ]
-            }
-          },
-          "planRef": {
-            "type": "string",
-            "description": "Opaque planRef returned by plan_shortform_clips."
-          },
-          "approvedCandidateIds": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 10,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "preset",
-          "candidates",
-          "planRef",
-          "approvedCandidateIds"
-        ]
-      }
-    },
-    {
-      "name": "configure_cut_strategy",
-      "description": "Turn automatic semantic cut-strategy recommendations on or off on this device. Off is the default and leaves ordinary editing plus explicitly requested J/L cuts unchanged.",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "enabled"
-        ]
-      }
-    },
-    {
-      "name": "plan_cut_strategy",
-      "description": "Turn AI semantic/visual observations at existing adjacent video boundaries into deterministic regular-cut, J-cut, L-cut, or match-cut recommendations. Regular cut is the fail-closed default. Validates timeline adjacency, confidence, lip-sync risk, and bounded durations; does not mutate the timeline.",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "boundaries": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 50,
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "outgoingId": {
-                  "type": "string",
-                  "description": "Outgoing video item at the existing picture boundary."
-                },
-                "incomingId": {
-                  "type": "string",
-                  "description": "Adjacent incoming video item at the existing picture boundary."
-                },
-                "audioMotivation": {
-                  "type": "string",
-                  "enum": [
-                    "incoming",
-                    "outgoing",
-                    "none"
-                  ],
-                  "description": "Whose audio meaningfully benefits from crossing the picture boundary."
-                },
-                "outgoingVisualUseful": {
-                  "type": "boolean",
-                  "description": "Whether the outgoing image remains useful while incoming audio begins."
-                },
-                "incomingVisualAddsContext": {
-                  "type": "boolean",
-                  "description": "Whether the incoming image adds context while outgoing audio continues."
-                },
-                "reactionValue": {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 10,
-                  "description": "Editorial value of seeing a listener/reaction across this boundary."
-                },
-                "lipSyncRisk": {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 10,
-                  "description": "Risk that an overlap exposes visibly mismatched spoken lips."
-                },
-                "visualMatch": {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 10,
-                  "description": "Verified similarity of motion, shape, framing, or action."
-                },
-                "pacing": {
-                  "type": "string",
-                  "enum": [
-                    "quick",
-                    "natural",
-                    "deliberate"
-                  ]
-                },
-                "confidence": {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1,
-                  "description": "Confidence in these semantic/visual observations."
-                },
-                "rationale": {
-                  "type": "string",
-                  "maxLength": 500,
-                  "description": "Short evidence-based editorial rationale."
-                },
-                "userRequestedDurationSeconds": {
-                  "type": "number",
-                  "minimum": 0.1,
-                  "maximum": 5,
-                  "description": "Only when the user explicitly requested an overlap duration."
-                }
-              },
-              "required": [
-                "outgoingId",
-                "incomingId",
-                "audioMotivation",
-                "outgoingVisualUseful",
-                "incomingVisualAddsContext",
-                "reactionValue",
-                "lipSyncRisk",
-                "visualMatch",
-                "pacing",
-                "confidence",
-                "rationale"
-              ]
-            }
-          }
-        },
-        "required": [
-          "boundaries"
-        ]
-      }
-    },
-    {
       "name": "auto_reframe",
       "description": "Auto-reframe a video clip: sample its frames, detect the subject/focal point per interval, and write reframe keyframes (builtin:zoom __openchatcutReframeCurve) so the crop window follows the subject when the canvas aspect differs (e.g. 16:9→9:16). Clears the clip's existing reframe keyframes first, then re-detects. Browser-only (needs the actual video pixels); returns an error if run headless or if the target isn't a video with a source.",
       "input_schema": {
@@ -3463,7 +2910,7 @@
     },
     {
       "name": "submit_render_job",
-      "description": "Render the active timeline ASYNCHRONOUSLY as MP4/WebM video or MP3/WAV audio. Returns immediately with a renderId instead of blocking; the render runs in a background job. Poll track_export for status/progress and the download URL. Prefer this over the synchronous submit_export for long timelines. Optional frame boundaries use a half-open [startFrame, endFrameExclusive) range.",
+      "description": "Render the active timeline ASYNCHRONOUSLY as MP4/WebM video or MP3/WAV audio. Returns immediately with a renderId; the job also appears in the editor top-right export queue with progress and cancellation. Poll track_export for status/progress and the download URL. Prefer this over the synchronous submit_export for long timelines. Optional frame boundaries use a half-open [startFrame, endFrameExclusive) range.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -3525,13 +2972,17 @@
             "type": "number",
             "minimum": 0,
             "description": "Legacy; prefer endFrameExclusive."
+          },
+          "saveToMediaPool": {
+            "type": "boolean",
+            "description": "When true, keep the completed file in My Media and record its source Sequence and source asset ranges. Defaults to false."
           }
         }
       }
     },
     {
       "name": "track_export",
-      "description": "Inspect render/export jobs started by submit_render_job. action=status: return current status. action=wait: poll until the selected jobs are terminal or timeoutSeconds elapses. Pass renderIds when available. If renderIds is omitted, latest defaults to true and returns the most recent matching render job. Set latest=false to list recent render jobs so you can tell which exports are complete, still rendering, or failed. onlyActive=true narrows the latest lookup to currently rendering jobs. Returns status, progress, and — when completed — a downloadUrl the browser can fetch.",
+      "description": "Inspect render/export jobs started by submit_render_job. action=status: return current status. action=wait: poll until terminal or timeoutSeconds elapses. Use one bounded wait; if waitExpired=true, report the background status and end the turn instead of calling wait again or starting another export. Pass renderIds when available. If omitted, latest defaults to true. Returns status, progress, and — when completed — a downloadUrl plus mediaPoolStatus when saveToMediaPool was requested.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -3563,7 +3014,7 @@
             "type": "number",
             "minimum": 0,
             "maximum": 3600,
-            "description": "For action=wait, maximum seconds before returning the current non-terminal status. Defaults to 90. Use 0 for unbounded wait."
+            "description": "For action=wait, maximum seconds before returning the current non-terminal status. Defaults to 20. Use 0 only when the caller owns a sufficiently long tool deadline."
           }
         },
         "required": [
@@ -4831,7 +4282,7 @@
     },
     {
       "name": "read_project",
-      "description": "Read the project currently targeted by this agent session, including draft state visible to the current tool context. Default = full overview. Narrow with view:\"timeline\"|\"assets\", timelineId, track, fromFrame/toFrame, itemId, or assetId; projectId cannot retarget this call. Unknown timeline/track references return an error. itemId/assetId are filters, so unmatched prefixes return empty item/asset arrays rather than an error. Pass code:true with assetId to include MG source code. Read at session start or after out-of-band changes; between your own edits, apply mutation deltas unless a note requests a reread.",
+      "description": "Read the project currently targeted by this agent session, including draft state visible to the current tool context. Default = full overview. Narrow with view:\"timeline\"|\"assets\", timelineId, track, fromFrame/toFrame, itemId, or assetId; projectId cannot retarget this call. Unknown timeline/track references return an error. itemId/assetId are filters, so unmatched prefixes return empty item/asset arrays rather than an error. Pass code:true with assetId to include MG source code. Read at session start or after out-of-band changes; between your own edits, apply mutation deltas unless a note requests a reread. Timeline items include canonical media linkage (sourceAssetId, resolvedSourceAssetId, linkStatus), exact source window (srcInFrame, sourceStartFrame, sourceDurationInFrames, sourceEndFrameExclusive), and editable state (keyframes, transform, filters, volume, fadeInFrames, fadeOutFrames). timeline.selectedId / selectedIds / selected is the inspector selection. If the user says \"the selected clip\" or \"this clip\", use that id — do not pick an adjacent track. Video aliases are bottom-up: V1 is the bottom video track, not the top lane.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -4933,7 +4384,7 @@
     },
     {
       "name": "load_skill",
-      "description": "Load one bundled or selected custom skill under the active model round input budget. Omit selectors for SKILL.md; if it is paged, follow nextOffset until null before support files. Use files=[...] for whole omitted files; page one file with file, offset, and limit. Bundled skills: ai-cinematic-short-film, asset-import, create-motion-graphics, cut-strategy-planner, explainer-video, export, image-gen, j-cut-editor, known-errors, l-cut-editor, long-video-to-shorts, motion-graphic-placement, multi-clips-to-reels, music, music-intelligence, news-rough-cut, openchatcut-plugin-basics, product-ad-video-script, product-help, shader-gen, shortform-clip-finder, skill-creator, storyboard-shot-breakdown, talking-head-guide, transcription, verification, video-gen, video-thumbnail-generator, voice, widget-forms.",
+      "description": "Load one bundled or selected custom skill under the active model round input budget. Omit selectors for SKILL.md; if it is paged, follow nextOffset until null before support files. Exactly one selector per call: either files=[...] to load whole omitted files, or file with offset and limit to page a single file. Never send file and files in the same call. Bundled skills: ai-cinematic-short-film, asset-import, create-motion-graphics, explainer-video, export, image-gen, known-errors, livestream-to-clips, long-video-to-shorts, motion-graphic-placement, multi-clips-to-reels, music, music-intelligence, news-rough-cut, openchatcut-plugin-basics, product-ad-video-script, product-help, shader-gen, skill-creator, storyboard-shot-breakdown, talking-head-guide, transcription, verification, video-gen, video-thumbnail-generator, voice, widget-forms.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -4943,11 +4394,11 @@
           },
           "file": {
             "type": "string",
-            "description": "One safe relative file path to page; use returned nextOffset for the next call."
+            "description": "One safe relative file path to page; use returned nextOffset for the next call. Omit the key entirely when sending files; never pass an empty string."
           },
           "files": {
             "type": "array",
-            "description": "Optional safe relative paths from omittedFiles. When present, only these whole files are returned.",
+            "description": "Optional safe relative paths from omittedFiles. When present, only these whole files are returned. Omit the key entirely when paging with file; never pass an empty array.",
             "items": {
               "type": "string"
             },
@@ -4993,62 +4444,32 @@
     },
     {
       "name": "run_skill_script",
-      "description": "Run a deterministic script inside an installed local skill. Prefer a workflow.json entrypoint with typed values; its binary/script are fixed and cannot be authored by the model. Legacy command remains only for external skills without a manifest. Execution uses an allowlisted binary, no shell, skill-locked cwd, a 120-second maximum timeout, and a 512 KB output cap.",
+      "description": "在本机执行已安装技能目录内的脚本（白名单命令：bash/sh/node/npm/npx/python3/python/uv/uvx/ffmpeg/ffprobe/mkdir/cp/chmod），工作目录锁定在技能目录。用于运行技能自带的确定性脚本（如 render.mjs、check-deps.sh），云沙箱无法访问本机技能文件。超时默认 60s、上限 120s；输出最多 512KB。",
       "input_schema": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "skill": {
             "type": "string",
-            "description": "Installed skill slug returned by load_skill."
-          },
-          "entrypoint": {
-            "type": "string",
-            "description": "Preferred deterministic workflow.json entrypoint."
-          },
-          "values": {
-            "type": "object",
-            "description": "Typed argument values declared by the selected entrypoint."
+            "description": "技能 slug（load_skill 返回的 skill 字段）"
           },
           "command": {
             "type": "string",
-            "description": "Legacy compatibility command for an external skill without workflow.json."
-          },
-          "args": {
-            "type": "array",
-            "maxItems": 100,
-            "items": {
-              "type": "string"
-            },
-            "description": "Legacy argv appended to command without a shell."
+            "description": "命令（首个词必须是白名单内可执行文件），如 bash scripts/check-deps.sh 或 node scripts/render.mjs"
           },
           "timeout": {
             "type": "number",
-            "minimum": 1000,
-            "maximum": 120000,
-            "description": "Optional timeout in milliseconds."
+            "description": "可选：超时毫秒，默认 60000，上限 120000"
           }
         },
         "required": [
-          "skill"
-        ],
-        "oneOf": [
-          {
-            "required": [
-              "entrypoint"
-            ]
-          },
-          {
-            "required": [
-              "command"
-            ]
-          }
+          "skill",
+          "command"
         ]
       }
     },
     {
       "name": "run_code",
-      "description": "Run a shell command in an isolated Linux sandbox (e2b) — use for skill-shipped scripts, ffmpeg/ffprobe media probing/transcoding, or node/python. Optionally write input files first (files[]) and read output files back (outputs[]). The sandbox cannot touch the editor timeline; apply any result with the editor tools. Call this when a loaded skill instructs you to run a script or command.",
+      "description": "Run a shell command in an isolated Linux sandbox (e2b) — use for skill-shipped scripts, ffmpeg/ffprobe media probing/transcoding, or node/python. Optionally write input files first (files[]) and read output files back (outputs[]). The sandbox cannot touch the editor timeline; apply any result with the editor tools. Call this when a loaded skill instructs you to run a script or command. Do not use for flex crop, keep-only-region jobs, or measuring clip edges (use edit_item transform.crop). The user does not need to forbid this tool in the prompt. If sandbox is not in configured capabilities, do not call this tool.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -5499,6 +4920,10 @@
           "force": {
             "type": "boolean",
             "description": "Recompute even when a valid cached analysis exists. Defaults to false."
+          },
+          "optional": {
+            "type": "boolean",
+            "description": "When true, missing packs or an analysis failure returns available=false so a larger edit can continue with simpler audio evidence. Invalid targets still fail."
           }
         }
       }
@@ -5770,7 +5195,7 @@
     },
     {
       "name": "import_asset",
-      "description": "Import ONE local media file (video/audio/image) by its absolute disk path into the media pool. Desktop app only; the path must be inside the allowed import roots configured via AGENT_IMPORT_ROOTS. Returns the imported pool asset(s); duplicates already in the pool are skipped.",
+      "description": "Import ONE local media file (video/audio/image) by its absolute disk path into the media pool. Desktop app only; the path must be inside an allowed AGENT_IMPORT_ROOTS directory. Returns the imported pool asset(s); duplicates already in the pool are skipped.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -5786,7 +5211,7 @@
     },
     {
       "name": "import_folder",
-      "description": "Import every supported media file inside a local directory (recursive, bounded) into the media pool. Desktop app only; the directory must be inside the allowed import roots configured via AGENT_IMPORT_ROOTS. Returns the imported pool assets and any per-file errors; duplicates already in the pool are skipped.",
+      "description": "Import every supported media file inside a local directory (recursive, bounded) into the media pool. Desktop app only; the directory must be inside an allowed AGENT_IMPORT_ROOTS directory. Returns imported assets, duplicate counts, unsupported file names, and per-file errors. Documents (txt/md/docx/pdf) are reported as unsupported here and should be attached to chat instead.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -5798,6 +5223,40 @@
         "required": [
           "path"
         ]
+      }
+    },
+    {
+      "name": "import_timeline",
+      "description": "Import FCPXML 1.x asset-clip timelines or CMX 3600 EDL text into a new editable OpenChatCut timeline. Referenced files must already exist in the current media pool; matching uses asset id, original path, source path, source filename, and asset name. The import preserves track/lane placement, timeline start and duration, source in-point, and file-backed audio clips. Unresolved or ambiguous media aborts the import without changing the project.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "fcpxml",
+              "edl"
+            ],
+            "description": "Interchange format."
+          },
+          "content": {
+            "type": "string",
+            "description": "Complete UTF-8 FCPXML or CMX 3600 EDL document text."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional imported timeline name."
+          },
+          "activate": {
+            "type": "boolean",
+            "description": "Open the imported timeline after success; default true."
+          }
+        },
+        "required": [
+          "format",
+          "content"
+        ],
+        "additionalProperties": false
       }
     },
     {
@@ -5867,7 +5326,7 @@
   "ask": [
     {
       "name": "read_timeline",
-      "description": "Read the current timeline: fps and every clip (id, track, name, startFrame, durationInFrames, props). Call this first to see current state before editing.",
+      "description": "Read the current timeline: fps and every clip, including canonical media linkage (sourceAssetId, resolvedSourceAssetId, linkStatus), exact source window (srcInFrame, sourceStartFrame, sourceDurationInFrames, sourceEndFrameExclusive), and editable state (keyframes, transform, filters, volume, fades). Call this first to see current state before editing.",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -6069,7 +5528,7 @@
     },
     {
       "name": "view_timeline_frames",
-      "description": "Render still frames of one timeline composition (pending/draft edits included). frames and seconds are ABSOLUTE TIMELINE coordinates, not source-media positions. Use after visual edits (MG/text, transitions, zoom, filters, aspect, captions) to verify the composed result. Provide exact coordinates or count; with neither, samples evenly (default 4, max 16). Multi-frame results are one labeled contact sheet when possible.",
+      "description": "Render still frames of one timeline composition (pending/draft edits included). frames and seconds are ABSOLUTE TIMELINE coordinates, not source-media positions. Use after visual edits (MG/text, transitions, zoom, filters, aspect, captions) to verify the composed result. Provide exact coordinates or count; with neither, samples evenly (default 4, max 8). Multi-frame results are one labeled contact sheet when possible.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6078,6 +5537,7 @@
             "items": {
               "type": "number"
             },
+            "maxItems": 8,
             "description": "Absolute timeline frame numbers to render."
           },
           "seconds": {
@@ -6085,11 +5545,14 @@
             "items": {
               "type": "number"
             },
+            "maxItems": 8,
             "description": "Absolute timeline seconds (converted by timeline fps)."
           },
           "count": {
             "type": "number",
-            "description": "Even midpoints across the timeline/range (default 4, max 16)."
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Even midpoints across the timeline/range (default 4, max 8)."
           },
           "fromSeconds": {
             "type": "number",
@@ -6108,7 +5571,7 @@
     },
     {
       "name": "view_asset_frames",
-      "description": "Inspect SOURCE media and see a labeled contact sheet; these coordinates never refer to the composed timeline. Pass assetId for the full pool source, or itemId to constrain sampling to that placed clip’s visible source window (srcInFrame + playbackRate aware). sourceTimesMs, frames, seconds, and fromSeconds/toSeconds are all SOURCE-MEDIA coordinates. With itemId, samples are clamped to its visible source window. Use for source selection/quality inspection; use view_timeline_frames for composed timeline proof. Audio has no frames. Default broad scan = 12 source-window midpoints, max 16. Finalized uploaded video prefers ffmpeg; blob/image/MG paths use browser or Remotion rendering.",
+      "description": "Inspect SOURCE media and see a labeled contact sheet; these coordinates never refer to the composed timeline. Pass assetId for the full pool source, or itemId to constrain sampling to that placed clip’s visible source window (srcInFrame + playbackRate aware). sourceTimesMs, frames, seconds, and fromSeconds/toSeconds are all SOURCE-MEDIA coordinates. With itemId, samples are clamped to its visible source window. Use for source selection/quality inspection; use view_timeline_frames for composed timeline proof. Audio has no frames. Default broad scan = 6 source-window midpoints, max 8. Reuse the contact sheet instead of repeatedly sampling the same range. Finalized uploaded video prefers ffmpeg; blob/image/MG paths use browser or Remotion rendering.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6129,13 +5592,15 @@
             "items": {
               "type": "number"
             },
-            "description": "Millisecond offsets in source-media time. Accepts 1–16 values."
+            "maxItems": 8,
+            "description": "Millisecond offsets in source-media time. Accepts 1–8 values."
           },
           "frames": {
             "type": "array",
             "items": {
               "type": "number"
             },
+            "maxItems": 8,
             "description": "Source-media frame numbers (project/source timebase)."
           },
           "seconds": {
@@ -6143,11 +5608,14 @@
             "items": {
               "type": "number"
             },
+            "maxItems": 8,
             "description": "Source-media seconds."
           },
           "count": {
             "type": "number",
-            "description": "Even source-window midpoints (default 12 for video, max 16)."
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Even source-window midpoints (default 6 for video, max 8)."
           },
           "fromSeconds": {
             "type": "number",
@@ -6295,7 +5763,7 @@
     },
     {
       "name": "read_project",
-      "description": "Read the project currently targeted by this agent session, including draft state visible to the current tool context. Default = full overview. Narrow with view:\"timeline\"|\"assets\", timelineId, track, fromFrame/toFrame, itemId, or assetId; projectId cannot retarget this call. Unknown timeline/track references return an error. itemId/assetId are filters, so unmatched prefixes return empty item/asset arrays rather than an error. Pass code:true with assetId to include MG source code. Read at session start or after out-of-band changes; between your own edits, apply mutation deltas unless a note requests a reread.",
+      "description": "Read the project currently targeted by this agent session, including draft state visible to the current tool context. Default = full overview. Narrow with view:\"timeline\"|\"assets\", timelineId, track, fromFrame/toFrame, itemId, or assetId; projectId cannot retarget this call. Unknown timeline/track references return an error. itemId/assetId are filters, so unmatched prefixes return empty item/asset arrays rather than an error. Pass code:true with assetId to include MG source code. Read at session start or after out-of-band changes; between your own edits, apply mutation deltas unless a note requests a reread. Timeline items include canonical media linkage (sourceAssetId, resolvedSourceAssetId, linkStatus), exact source window (srcInFrame, sourceStartFrame, sourceDurationInFrames, sourceEndFrameExclusive), and editable state (keyframes, transform, filters, volume, fadeInFrames, fadeOutFrames). timeline.selectedId / selectedIds / selected is the inspector selection. If the user says \"the selected clip\" or \"this clip\", use that id — do not pick an adjacent track. Video aliases are bottom-up: V1 is the bottom video track, not the top lane.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6345,7 +5813,7 @@
     },
     {
       "name": "load_skill",
-      "description": "Load one bundled or selected custom skill under the active model round input budget. Omit selectors for SKILL.md; if it is paged, follow nextOffset until null before support files. Use files=[...] for whole omitted files; page one file with file, offset, and limit. Bundled skills: ai-cinematic-short-film, asset-import, create-motion-graphics, cut-strategy-planner, explainer-video, export, image-gen, j-cut-editor, known-errors, l-cut-editor, long-video-to-shorts, motion-graphic-placement, multi-clips-to-reels, music, music-intelligence, news-rough-cut, openchatcut-plugin-basics, product-ad-video-script, product-help, shader-gen, shortform-clip-finder, skill-creator, storyboard-shot-breakdown, talking-head-guide, transcription, verification, video-gen, video-thumbnail-generator, voice, widget-forms.",
+      "description": "Load one bundled or selected custom skill under the active model round input budget. Omit selectors for SKILL.md; if it is paged, follow nextOffset until null before support files. Exactly one selector per call: either files=[...] to load whole omitted files, or file with offset and limit to page a single file. Never send file and files in the same call. Bundled skills: ai-cinematic-short-film, asset-import, create-motion-graphics, explainer-video, export, image-gen, known-errors, livestream-to-clips, long-video-to-shorts, motion-graphic-placement, multi-clips-to-reels, music, music-intelligence, news-rough-cut, openchatcut-plugin-basics, product-ad-video-script, product-help, shader-gen, skill-creator, storyboard-shot-breakdown, talking-head-guide, transcription, verification, video-gen, video-thumbnail-generator, voice, widget-forms.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6355,11 +5823,11 @@
           },
           "file": {
             "type": "string",
-            "description": "One safe relative file path to page; use returned nextOffset for the next call."
+            "description": "One safe relative file path to page; use returned nextOffset for the next call. Omit the key entirely when sending files; never pass an empty string."
           },
           "files": {
             "type": "array",
-            "description": "Optional safe relative paths from omittedFiles. When present, only these whole files are returned.",
+            "description": "Optional safe relative paths from omittedFiles. When present, only these whole files are returned. Omit the key entirely when paging with file; never pass an empty array.",
             "items": {
               "type": "string"
             },
@@ -6400,6 +5868,10 @@
           "force": {
             "type": "boolean",
             "description": "Recompute even when a valid cached analysis exists. Defaults to false."
+          },
+          "optional": {
+            "type": "boolean",
+            "description": "When true, missing packs or an analysis failure returns available=false so a larger edit can continue with simpler audio evidence. Invalid targets still fail."
           }
         }
       }
