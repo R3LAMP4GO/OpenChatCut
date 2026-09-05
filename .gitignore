@@ -58,6 +58,7 @@ public/media/asr-models/
 
 # ── Private workspace (ignored since 2026-07-18) ──────────────
 # AI assistant project rules, session configuration, skills, and hooks
+.gg/
 CLAUDE.md
 AGENTS.md
 .codex/
