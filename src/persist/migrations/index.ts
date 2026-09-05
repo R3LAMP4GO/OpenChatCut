@@ -9,6 +9,7 @@ import {
   isProjectShape,
   isTimelineState,
   normalizeFolders,
+  normalizeTakeReviewSessions,
   normalizeTimelineTracks,
   timelineToV1,
 } from './normalize.js';
@@ -47,6 +48,7 @@ function finalize(value: unknown): ProjectDoc | null {
   const assets = dedupeAssets(Array.isArray(value.assets) ? value.assets : []).map((asset) => (
     asset.folderId && !folderIds.has(asset.folderId) ? { ...asset, folderId: undefined } : asset
   ));
+  const takeReviewSessions = normalizeTakeReviewSessions(value.takeReviewSessions, assets);
   // Smoothly push back to the legal range: illegal fade/out-of-bounds keyframes can only be repaired here, without waiting for the user to move the clip first.
   const sourceRevisionBySrc = new Map(assets.map((asset) => [asset.src, sourceRevisionOf(asset)]));
   const timelines = value.timelines.map(normalizeTimelineTracks).map(fitTimelineItems).map((timeline) => ({
@@ -57,12 +59,13 @@ function finalize(value: unknown): ProjectDoc | null {
         : { ...item, sourceRevision: sourceRevisionBySrc.get(item.src) }
     )),
   }));
-  const { designStyle: _designStyle, ...preserved } = value;
+  const { designStyle: _designStyle, takeReviewSessions: _takeReviewSessions, ...preserved } = value;
   const doc = {
     ...preserved,
     version: CURRENT_PROJECT_VERSION,
     assets,
     mediaFolders,
+    ...(takeReviewSessions.length ? { takeReviewSessions } : {}),
     timelines,
     activeTimelineId: timelines.some((timeline) => timeline.id === value.activeTimelineId)
       ? value.activeTimelineId

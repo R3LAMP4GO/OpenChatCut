@@ -1,6 +1,7 @@
 import type { CURRENT_PROJECT_VERSION } from '../../shared/project-version.js';
 import type { DesignStyle } from './designTypes.js';
 import type { MediaAsset, MediaFolder } from './mediaTypes.js';
+import type { TakeReviewSession } from '../takes/takeReviewTypes.js';
 import type { Timeline } from './timelineTypes.js';
 
 /** a project = shared media + ordered timelines + which one is active
@@ -12,6 +13,8 @@ export interface ProjectDoc {
   mediaFolders: MediaFolder[];
   timelines: Timeline[];
   activeTimelineId: string;
+  /** Non-destructive source review sessions; timeline content never derives from them automatically. */
+  takeReviewSessions?: TakeReviewSession[];
   /** applied brand identity (manage_design_style); absent = no style set */
   designStyle?: DesignStyle;
 }

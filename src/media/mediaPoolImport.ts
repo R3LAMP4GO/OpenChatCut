@@ -18,6 +18,7 @@ interface ImportMediaBatchOptions {
   ) => Promise<MediaAsset>;
   onMoveAssets: (ids: string[], folderId?: string) => void;
   onProgress: (ratio: number) => void;
+  onAssetReady?: (asset: MediaAsset) => void;
 }
 
 /**
@@ -32,6 +33,7 @@ export async function importMediaBatch({
   onImport,
   onMoveAssets,
   onProgress,
+  onAssetReady,
 }: ImportMediaBatchOptions): Promise<unknown[]> {
   const completions: Promise<void>[] = [];
   const completionErrors: unknown[] = [];
@@ -76,6 +78,7 @@ export async function importMediaBatch({
         onFailure: (_asset, reason) => recordFailure(reason),
       }).then((asset) => {
         if (readyAssetId !== asset.id) placeAsset(asset);
+        if (!failureRecorded) onAssetReady?.(asset);
       }).catch(recordFailure);
     } catch (reason) {
       recordFailure(reason);

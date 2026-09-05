@@ -41,4 +41,14 @@ assert.deepEqual(conflictStarts, ['cancel.mov', 'same-name.mov'], '无 placehold
 assert.deepEqual(conflictErrors, [], '用户取消不应显示为批次失败');
 assert.deepEqual(conflictPlacements, ['overwrite:folder-b'], '无 placeholder 的覆盖结果仍须进入目标文件夹');
 
+const takeBatchReady: string[] = [];
+await importMediaBatch({
+  files: [{ name: 'first.mov' } as File, { name: 'second.mov' } as File],
+  onImport: async (file) => ({ id: file.name, name: file.name } as MediaAsset),
+  onMoveAssets: () => undefined,
+  onProgress: () => undefined,
+  onAssetReady: (asset) => takeBatchReady.push(asset.id),
+});
+assert.deepEqual(takeBatchReady, ['first.mov', 'second.mov'], 'take batches receive only successfully completed assets');
+
 console.log('media-pool-progressive-import.verify: failures and conflict choices preserve batch progress');

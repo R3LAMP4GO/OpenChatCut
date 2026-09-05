@@ -17,6 +17,7 @@ import { isSourceClockMetadata } from '../../editor/timecode.js';
 import { withMediaSourceRevision } from '../../editor/mediaSourceRevision.js';
 import { normalizeSha256Hash } from '../../../shared/content-hash.js';
 import { safeSourceFilename, stripInvalidXml10Characters } from '../../media/sourceFilename.js';
+import { isTakeReviewSession, type TakeReviewSession } from '../../takes/takeReviewTypes.js';
 
 export type LooseProjectShape = {
   version?: unknown;
@@ -25,6 +26,7 @@ export type LooseProjectShape = {
   timelines: Timeline[];
   activeTimelineId: string;
   designStyle?: unknown;
+  takeReviewSessions?: unknown;
 };
 
 const ITEM_KINDS: Record<TimelineItem['kind'], true> = {
@@ -217,6 +219,18 @@ export function isMediaFolder(value: unknown): value is MediaFolder {
   const folder = value as Partial<MediaFolder>;
   return typeof folder.id === 'string' && typeof folder.name === 'string'
     && (folder.parentId === undefined || typeof folder.parentId === 'string');
+}
+
+export function normalizeTakeReviewSessions(value: unknown, assets: readonly MediaAsset[]): TakeReviewSession[] {
+  if (!Array.isArray(value)) return [];
+  const sourceRevisionByAssetId = new Map(assets.map((asset) => [asset.id, asset.sourceRevision]));
+  const seen = new Set<string>();
+  return value.filter(isTakeReviewSession).flatMap((session) => {
+    if (seen.has(session.id)) return [];
+    seen.add(session.id);
+    const stale = session.candidates.some((candidate) => sourceRevisionByAssetId.get(candidate.assetId) !== candidate.sourceRevision);
+    return [{ ...session, status: stale ? 'stale' : session.status }];
+  });
 }
 
 export function normalizeFolders(value: unknown): MediaFolder[] {

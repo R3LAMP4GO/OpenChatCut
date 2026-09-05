@@ -1,0 +1,19 @@
+import type { TakeAnalysis, TakeGroup } from '../transcriptTakeAnalysis.js';
+import type { BenchmarkGroundTruth, GoldGroup, Span } from './types.js';
+
+const key = (spans: readonly Span[]) => spans.map((span) => `${span.start}:${span.end}`).sort().join('|');
+const iou = (a: Span, b: Span) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start)) / Math.max(1, Math.max(a.end, b.end) - Math.min(a.start, b.start));
+const overlap = (gold: GoldGroup, actual: TakeGroup) => gold.members.filter((member) => actual.members.some((candidate) => iou(member, candidate) >= .5)).length;
+const excerpt = (start: number, end: number, words: TakeAnalysis['phrases']) => words.filter((word) => word.start < end && word.end > start).map((word) => word.text).join(' ');
+export interface BenchmarkReport { truePositives: number; falsePositives: number; falseNegatives: number; precision: number; recall: number; groupAccuracy: number; weightedError: number; meanBoundaryError: number; maxBoundaryError: number; ambiguityCount: number; byCaseType: Record<string, { tp: number; fp: number; fn: number }>; disagreements: unknown[]; }
+
+export function evaluateTakeBenchmark(analysis: TakeAnalysis, gold: BenchmarkGroundTruth): BenchmarkReport {
+  const unmatched = new Set(analysis.groups); const errors: number[] = []; const disagreements: unknown[] = []; const byCaseType: BenchmarkReport['byCaseType'] = {};
+  let tp = 0;
+  for (const group of gold.takeGroups) { const match = [...unmatched].filter((actual) => overlap(group, actual) === group.members.length).sort((a, b) => overlap(group, b) - overlap(group, a))[0]; const slice = byCaseType[group.caseType] ??= { tp: 0, fp: 0, fn: 0 }; if (!match) { slice.fn += 1; disagreements.push({ type: 'missing-group', groundTruth: group, detectorMembers: [], explanation: 'No GROUPED detector component covered every labeled member.' }); continue; } unmatched.delete(match); tp += 1; slice.tp += 1; for (const member of group.members) { const detected = match.members.find((candidate) => iou(member, candidate) >= .5)!; errors.push(Math.abs(member.start - detected.start), Math.abs(member.end - detected.end)); } }
+  for (const group of unmatched) { const pair = analysis.pairs.find((item) => item.score.disposition === 'GROUPED' && group.members.some((member) => item.left.start === member.start || item.right.start === member.start)); const score = pair?.score; disagreements.push({ type: 'unexpected-group', detectorMembers: group.members, excerpt: excerpt(group.start, group.end, analysis.phrases), scores: score, explanation: score ? `Detector disposition is ${score.disposition}; overall=${score.overall.toFixed(3)} from lexical, semantic, alignment, and temporal components.` : 'No grouped pair was retained.' }); }
+  for (const pair of gold.negativePairs) { const found = analysis.pairs.find((item) => item.left.start === pair.left.start && item.right.start === pair.right.start); if (found?.score.disposition === 'GROUPED') disagreements.push({ type: 'negative-pair-grouped', groundTruth: pair, detector: found, explanation: `Detector disposition is GROUPED; overall=${found.score.overall.toFixed(3)}.` }); }
+  const fp = unmatched.size; const fn = gold.takeGroups.length - tp;
+  return { truePositives: tp, falsePositives: fp, falseNegatives: fn, precision: tp / Math.max(1, tp + fp), recall: tp / Math.max(1, tp + fn), groupAccuracy: tp / Math.max(1, gold.takeGroups.length), weightedError: fp * 2 + fn, meanBoundaryError: errors.reduce((sum, value) => sum + value, 0) / Math.max(1, errors.length), maxBoundaryError: Math.max(0, ...errors), ambiguityCount: gold.takeGroups.filter((group) => group.ambiguity).length, byCaseType, disagreements };
+}
+export const groupSignature = (analysis: TakeAnalysis) => analysis.groups.map((group) => key(group.members)).sort();

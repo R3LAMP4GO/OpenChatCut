@@ -96,6 +96,12 @@ interface LibraryPanelProps {
   onImportMobileMedia: (record: MobileUploadRecord) => Promise<void>;
   onIngestDirectoryAsset: (asset: MediaAsset) => void;
   onTranscribeAsset: (asset: MediaAsset) => void;
+  onTakeBatchCreated: (assetIds: string[]) => void;
+  takeReviewSessions: import('../takes/takeReviewTypes').TakeReviewSession[] | undefined;
+  onSelectTakeCandidate: (sessionId: string, assetId: string) => void;
+  onSetTakeRanges: (sessionId: string, ranges: import('../takes/takeRanges').TakeRange[]) => void;
+  onSelectTakeRange: (sessionId: string, rangeId: string) => void;
+  onInsertTakeRange: (range: import('../takes/takeRanges').TakeRange) => void;
   onAddMediaItem: (asset: MediaAsset) => void;
   onAddMediaAssetsToTimeline: (assets: MediaAsset[]) => void;
   onUseMediaAI: (assets: MediaAsset[]) => void;
@@ -132,7 +138,7 @@ function localizeDefaultSequenceName(name: string, t: ReturnType<typeof useT>): 
   const match = /^序列 (\d+)$/.exec(name);
   return match ? t('序列 {n}', { n: match[1]! }) : name;
 }
-export function LibraryPanel({ semanticScopeId, templates, onAddTemplate, onAddAudio, playerRef, fps, items, sequenceOptions, onAddSequence, trackOptions, captionTracks, onSetCaptions, onCreateCaptionTrack, onUpdateCaptions, onSetItemTranscript, onToggleWord, onCleanScript, onSetGapCap, onSetTranscriptPlayOrder, onReorderTrackItems, onClearEdits, assets, mediaFolders, usedAssetIds, offlineAssetIds, onAssetLoadError, onImportMedia, onImportMobileMedia, onIngestDirectoryAsset, onTranscribeAsset, onAddMediaItem, onAddMediaAssetsToTimeline, onUseMediaAI, onCreateMediaFolder, onRenameMediaFolder, onDeleteMediaFolder, onMoveMediaAssets, onRenameMediaAsset, onRenameMediaAssets, onSetMediaAssetFavorite, onSetMediaAssetsFavorite, onRemoveMediaAsset, onRemoveMediaAssets, onPasteMediaAssets, onRelinkMediaAsset, creativeMode, onCreativeModeChange, onAddSolid, onUseTemplateAI, selectedItem, onApplyTransition, onApplyFx, onApplyZoom }: LibraryPanelProps) {
+export function LibraryPanel({ semanticScopeId, templates, onAddTemplate, onAddAudio, playerRef, fps, items, sequenceOptions, onAddSequence, trackOptions, captionTracks, onSetCaptions, onCreateCaptionTrack, onUpdateCaptions, onSetItemTranscript, onToggleWord, onCleanScript, onSetGapCap, onSetTranscriptPlayOrder, onReorderTrackItems, onClearEdits, assets, mediaFolders, usedAssetIds, offlineAssetIds, onAssetLoadError, onImportMedia, onImportMobileMedia, onIngestDirectoryAsset, onTranscribeAsset, onTakeBatchCreated, takeReviewSessions, onSelectTakeCandidate, onSetTakeRanges, onSelectTakeRange, onInsertTakeRange, onAddMediaItem, onAddMediaAssetsToTimeline, onUseMediaAI, onCreateMediaFolder, onRenameMediaFolder, onDeleteMediaFolder, onMoveMediaAssets, onRenameMediaAsset, onRenameMediaAssets, onSetMediaAssetFavorite, onSetMediaAssetsFavorite, onRemoveMediaAsset, onRemoveMediaAssets, onPasteMediaAssets, onRelinkMediaAsset, creativeMode, onCreativeModeChange, onAddSolid, onUseTemplateAI, selectedItem, onApplyTransition, onApplyFx, onApplyZoom }: LibraryPanelProps) {
   const t = useT();
   const selKind = selectedItem?.kind ?? null;
   const isVisual = selKind != null && selKind !== 'audio';
@@ -280,7 +286,7 @@ export function LibraryPanel({ semanticScopeId, templates, onAddTemplate, onAddA
           <MediaPoolPanel semanticScopeId={semanticScopeId} assets={assets} folders={mediaFolders} fps={fps} usedAssetIds={usedAssetIds} offlineAssetIds={offlineAssetIds} onAssetLoadError={onAssetLoadError} onImport={onImportMedia} onImportMobile={onImportMobileMedia} directoryImport={directoryImport} directoryImportError={directoryImportError} onAddAsset={onAddMediaItem} onAddAssetsToTimeline={onAddMediaAssetsToTimeline} onAddAssetsToChat={onUseMediaAI}
             onCreateFolder={onCreateMediaFolder} onRenameFolder={onRenameMediaFolder} onDeleteFolder={onDeleteMediaFolder}
             onMoveAssets={onMoveMediaAssets} onRenameAsset={onRenameMediaAsset} onTranscribe={onTranscribeAsset} onRenameAssets={onRenameMediaAssets} onSetFavorite={onSetMediaAssetFavorite} onSetAssetsFavorite={onSetMediaAssetsFavorite} onRemoveAsset={onRemoveMediaAsset} onRemoveAssets={onRemoveMediaAssets} onPasteAssets={onPasteMediaAssets}
-            onRelinkAsset={onRelinkMediaAsset} onAddSolid={onAddSolid} />
+            onRelinkAsset={onRelinkMediaAsset} onAddSolid={onAddSolid} onTakeBatchCreated={onTakeBatchCreated} takeReviewSessions={takeReviewSessions} onSelectTakeCandidate={onSelectTakeCandidate} onSetTakeRanges={onSetTakeRanges} onSelectTakeRange={onSelectTakeRange} onInsertTakeRange={onInsertTakeRange} />
         </div>
       ) : isSkills ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, borderTop: `0.5px solid ${theme.border}` }}>

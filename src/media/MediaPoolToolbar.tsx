@@ -38,6 +38,8 @@ interface MediaPoolToolbarProps {
   onQueryChange: (value: string) => void;
   onSemanticResults: (matches: SemanticMatch[] | null) => void;
   onUpload: () => void;
+  onUploadTakeBatch: () => void;
+  onOpenTakeReview: () => void;
   onPickFolder?: () => void;
   onWatchFolder?: () => void;
   onStopWatch: () => void;
@@ -205,6 +207,8 @@ function ActionsMenu(props: MenuProps) {
     props.lifecycle.close();
   };
   const popover = open && <div ref={props.lifecycle.menuRef} role="dialog" aria-label={t('更多操作')} className="cc-media-popover cc-media-actions-menu cc-media-toolbar-menu-fixed" style={props.lifecycle.actionsStyle}>
+    <button onClick={() => run(props.onUploadTakeBatch, true)}><Icon name="upload" size={15} />{t('导入为镜头批次')}</button>
+    <button onClick={() => run(props.onOpenTakeReview, true)}>{t('查看镜头批次')}</button>
     <button onClick={() => runModal(props.onMobileUpload)}><Icon name="qrCode" size={15} />{t('手机传素材')}</button>
     {props.canAddSolid && <button onClick={() => run(props.onAddSolid, true)}><span className="cc-media-solid-icon">{t('色')}</span>{t('添加纯色')}</button>}
     <button onClick={() => runModal(props.onCreateFolder)}><Icon name="folderPlus" size={16} />{t('新建文件夹')}</button>

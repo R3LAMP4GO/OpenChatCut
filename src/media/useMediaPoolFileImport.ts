@@ -31,6 +31,7 @@ interface UseMediaPoolFileImportOptions {
   onCreateFolder: (name: string, parentId?: string) => string;
   setError: (error: string | null) => void;
   t: typeof translate;
+  onTakeBatchCreated?: (assetIds: string[]) => void;
 }
 
 interface MediaPoolFileImportState {
@@ -40,6 +41,8 @@ interface MediaPoolFileImportState {
   setBusy: (busy: boolean) => void;
   canPickDirectory: boolean;
   pickFiles: (files: FileList | readonly File[] | null, folderId?: string) => Promise<boolean>;
+  takeBatchInputRef: RefObject<HTMLInputElement | null>;
+  pickTakeBatchFiles: (files: FileList | readonly File[] | null, folderId?: string) => Promise<boolean>;
   pickDirectory: (folderId?: string) => Promise<void>;
   handleDrop: (transfer: DataTransfer, folderId?: string) => Promise<void>;
 }
@@ -127,8 +130,9 @@ function useDirectoryFileActions(
 }
 
 export function useMediaPoolFileImport(options: UseMediaPoolFileImportOptions): MediaPoolFileImportState {
-  const { onImport, onMoveAssets, onCreateFolder, setError, t } = options;
+  const { onImport, onMoveAssets, onCreateFolder, setError, t, onTakeBatchCreated } = options;
   const inputRef = useRef<HTMLInputElement>(null);
+  const takeBatchInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [uploadRatio, setUploadRatio] = useState<number | null>(null);
   const importFiles = useCallback<ImportFiles>(async (files, folderId, targetFolderIds) => {
@@ -156,9 +160,34 @@ export function useMediaPoolFileImport(options: UseMediaPoolFileImportOptions): 
   const pickFiles = useCallback<PickFiles>((files, folderId) => (
     importFiles(files, folderId)
   ), [importFiles]);
+  const pickTakeBatchFiles = useCallback<PickFiles>(async (files, folderId) => {
+    const importedIds: string[] = [];
+    if (!files?.length) return true;
+    setBusy(true);
+    setError(null);
+    setUploadRatio(0);
+    try {
+      const completionErrors = await importMediaBatch({
+        files: Array.from(files), targetFolderId: folderId, onImport, onMoveAssets,
+        onProgress: (ratio) => setUploadRatio((current) => Math.max(current ?? 0, ratio)),
+        onAssetReady: (asset) => importedIds.push(asset.id),
+      });
+      if (importedIds.length >= 2) onTakeBatchCreated?.(importedIds);
+      if (completionErrors.length) throw completionErrors[0];
+      setUploadRatio(1);
+      return true;
+    } catch (reason) {
+      setError(mediaImportErrorMessage(reason));
+      return false;
+    } finally {
+      setBusy(false);
+      setUploadRatio(null);
+      if (takeBatchInputRef.current) takeBatchInputRef.current.value = '';
+    }
+  }, [onImport, onMoveAssets, onTakeBatchCreated, setError]);
   const directory = useDirectoryFileActions(importFiles, onCreateFolder, setError, t);
   return {
-    inputRef, busy, setBusy, uploadRatio, canPickDirectory: canPickMediaFolder(),
-    pickFiles, ...directory,
+    inputRef, takeBatchInputRef, busy, setBusy, uploadRatio, canPickDirectory: canPickMediaFolder(),
+    pickFiles, pickTakeBatchFiles, ...directory,
   };
 }

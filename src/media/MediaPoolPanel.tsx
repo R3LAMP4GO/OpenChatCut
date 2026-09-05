@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactK
 import { useMusicAnalysisCards } from '../audio/intelligence/useMusicAnalysisCards';
 import { useT } from '../i18n/locale';
 import type { MediaAsset, MediaAssetRelinkPatch, MediaFolder } from '../editor/types';
+import type { TakeReviewSession } from '../takes/takeReviewTypes';
+import { TakeReviewPanel } from '../takes/TakeReviewPanel';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useFocusReturn } from '../hooks/useFocusReturn';
 import { useMediaPoolRelink } from './useMediaPoolRelink';
@@ -69,20 +71,28 @@ interface MediaPoolPanelProps {
   onAddSolid?: () => void;
   /** Start (or retry) ASR for one asset from the pool UI. */
   onTranscribe: (asset: MediaAsset) => void;
+  /** Persist a non-destructive review batch after its files finish importing. */
+  onTakeBatchCreated?: (assetIds: string[]) => void;
+  takeReviewSessions?: TakeReviewSession[];
+  onSelectTakeCandidate?: (sessionId: string, assetId: string) => void;
+  onSetTakeRanges?: (sessionId: string, ranges: import('../takes/takeRanges').TakeRange[]) => void;
+  onSelectTakeRange?: (sessionId: string, rangeId: string) => void;
+  onInsertTakeRange?: (range: import('../takes/takeRanges').TakeRange) => void;
 }
 
 export function MediaPoolPanel({
   semanticScopeId, assets, folders, fps, usedAssetIds, offlineAssetIds, onAssetLoadError,
   onImport, onImportMobile, directoryImport, directoryImportError, onAddAsset, onAddAssetsToTimeline, onAddAssetsToChat, onCreateFolder, onRenameFolder,
-  onDeleteFolder, onMoveAssets, onRenameAsset, onRenameAssets, onSetFavorite, onSetAssetsFavorite, onRemoveAsset, onRemoveAssets, onPasteAssets, onRelinkAsset, onAddSolid, onTranscribe,
+  onDeleteFolder, onMoveAssets, onRenameAsset, onRenameAssets, onSetFavorite, onSetAssetsFavorite, onRemoveAsset, onRemoveAssets, onPasteAssets, onRelinkAsset, onAddSolid, onTranscribe, onTakeBatchCreated, takeReviewSessions, onSelectTakeCandidate, onSetTakeRanges, onSelectTakeRange, onInsertTakeRange,
 }: MediaPoolPanelProps) {
   const t = useT();
   const musicAnalysis = useMusicAnalysisCards(assets);
   const [error, setError] = useState<string | null>(null);
-  const fileImport = useMediaPoolFileImport({ onImport, onMoveAssets, onCreateFolder, setError, t });
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const fileImport = useMediaPoolFileImport({ onImport, onMoveAssets, onCreateFolder, setError, t, onTakeBatchCreated });
   const {
-    inputRef, busy, setBusy, uploadRatio, canPickDirectory,
-    pickFiles, pickDirectory, handleDrop,
+    inputRef, takeBatchInputRef, busy, setBusy, uploadRatio, canPickDirectory,
+    pickFiles, pickTakeBatchFiles, pickDirectory, handleDrop,
   } = fileImport;
   const { available: canWatchDirectory, busy: watchBusy, activeWatch, start: startWatch, stop: stopWatch } = directoryImport;
   const [query, setQuery] = useState('');
@@ -350,6 +360,7 @@ export function MediaPoolPanel({
       }}
     >
       <input ref={inputRef} type="file" multiple hidden onChange={(event) => void pickFiles(event.target.files, currentFolderId)} />
+      <input ref={takeBatchInputRef} type="file" multiple hidden onChange={(event) => void pickTakeBatchFiles(event.target.files, currentFolderId)} />
       <input ref={relinkInputRef} type="file" hidden onChange={(event) => void pickRelinkFile(event.target.files)} />
       <MediaPoolToolbar
         scopeId={semanticScopeId}
@@ -367,6 +378,8 @@ export function MediaPoolPanel({
         onQueryChange={setQuery}
         onSemanticResults={onSemanticResults}
         onUpload={() => inputRef.current?.click()}
+        onUploadTakeBatch={() => takeBatchInputRef.current?.click()}
+        onOpenTakeReview={() => setReviewOpen(true)}
         onPickFolder={canPickDirectory ? () => void pickDirectory(currentFolderId) : undefined}
         onWatchFolder={canWatchDirectory ? () => void startWatch() : undefined} onStopWatch={() => void stopWatch()}
         watchingFolder={activeWatch?.directoryName ?? null} watchBusy={watchBusy}
@@ -463,6 +476,7 @@ export function MediaPoolPanel({
 
       <PoolTranscriptViewer asset={viewerAsset} entries={transcriptEntries} onClose={closeTranscriptViewer} onStep={stepViewer} />
 
+      {reviewOpen && takeReviewSessions?.at(-1) ? <TakeReviewPanel session={takeReviewSessions.at(-1)!} assets={assets} fps={fps} onClose={() => setReviewOpen(false)} onSelect={(assetId) => onSelectTakeCandidate?.(takeReviewSessions.at(-1)!.id, assetId)} onRanges={(ranges) => onSetTakeRanges?.(takeReviewSessions.at(-1)!.id, ranges)} onSelectRange={(rangeId) => onSelectTakeRange?.(takeReviewSessions.at(-1)!.id, rangeId)} onInsertRange={(range) => onInsertTakeRange?.(range)} /> : null}
       <MediaPoolDialogs
         prompt={promptState}
         promptValue={promptValue}

@@ -1,0 +1,1 @@
+Place one human-annotated JSON file per real recording here. Labels must retain the recording ID, source revision, and transcript-generation ID so they cannot silently retarget after transcription changes. No real recordings are available in this repository.

@@ -256,6 +256,7 @@ export function buildCommands(dispatch: ProjectDispatch, getDoc: () => ProjectDo
       addAsset: (asset: MediaAsset) => dispatch({ type: 'addAsset', asset }),
       addMediaItem: (asset, at) => {
         if (!isTimelineMediaAssetKind(asset.kind)) throw new Error(`${asset.name} is not timeline media`);
+        if (typeof at?.srcInFrame === 'number' && Math.round(at.srcInFrame) >= asset.durationInFrames) throw new Error(`${asset.name} has no media remaining at this source frame`);
         const item = asset.kind === 'motion-graphic'
           ? {
               id: uid('item'),
@@ -275,7 +276,7 @@ export function buildCommands(dispatch: ProjectDispatch, getDoc: () => ProjectDo
           : {
               id: uid('item'),
               track: pickTrack(at?.track, asset.kind === 'audio' ? 'audio' : 'video'),
-              durationInFrames: asset.durationInFrames,
+              durationInFrames: Math.min(asset.durationInFrames - Math.max(0, Math.round(at?.srcInFrame ?? 0)), Math.max(1, Math.round(at?.durationInFrames ?? asset.durationInFrames))),
               kind: asset.kind as Exclude<typeof asset.kind, 'motion-graphic'>,
               sourceAssetId: asset.id,
               name: asset.name,

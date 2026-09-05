@@ -42,7 +42,7 @@ export interface EditorCommands {
   addMotionGraphic: (tpl: Tpl, at?: { track?: TrackId; startFrame?: number; ripple?: boolean; overwrite?: boolean }) => void;
   addAudio: (asset: AudioAsset, at?: { track?: TrackId; startFrame?: number; ripple?: boolean; overwrite?: boolean }) => AddAudioResult;
   addAsset: (asset: MediaAsset) => void;
-  addMediaItem: (asset: MediaAsset, at?: { track?: TrackId; startFrame?: number; srcInFrame?: number; ripple?: boolean; overwrite?: boolean }) => string;
+  addMediaItem: (asset: MediaAsset, at?: { track?: TrackId; startFrame?: number; srcInFrame?: number; durationInFrames?: number; ripple?: boolean; overwrite?: boolean }) => string;
   /** Add an instance of another timeline without copying its contents. */
   addSequence: (timelineId: string, at?: {
     track?: TrackId;

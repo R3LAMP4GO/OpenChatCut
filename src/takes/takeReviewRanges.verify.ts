@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { runProjectMigrations } from '../persist/migrations/index.js';
+import { setTakeReviewRanges, selectTakeReviewRange } from './takeReviewReducer.js';
+import type { TakeRange } from './takeRanges.js';
+const doc = { version: 3, assets: [], mediaFolders: [], timelines: [{ id: 'tl', name: 'Timeline', order: 0, fps: 30, width: 1, height: 1, items: [], selectedId: null }], activeTimelineId: 'tl', takeReviewSessions: [{ version: 1, id: 's', createdAt: 1, status: 'ready', candidates: [{ assetId: 'a', sourceRevision: 'r', startFrame: 0, endFrame: 300 }] }] } as any;
+const ranges: TakeRange[] = [{ id: 'a:30-90', assetId: 'a', sourceRevision: 'r', startFrame: 30, endFrame: 90, evidence: ['scene'] }];
+const selected = selectTakeReviewRange(setTakeReviewRanges(doc, 's', ranges), 's', 'a:30-90');
+assert.equal(selected.takeReviewSessions![0]!.selectedRangeId, 'a:30-90');
+assert.equal(runProjectMigrations(selected)?.doc.takeReviewSessions?.[0].ranges?.[0]?.startFrame, 30);
+console.log('takeReviewRanges.verify: ranges persist and selection survives normalization');
