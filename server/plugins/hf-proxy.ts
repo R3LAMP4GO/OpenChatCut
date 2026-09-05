@@ -156,7 +156,7 @@ export function parseTarget(rawPath: string): ProxyTarget | null {
   // catalog-pinned revision so the whitelist keeps serving the exact locked
   // file tuple (same sha-verified bytes, just a different URL segment).
   if (revision === 'main') {
-    const entry = ASR_MODELS.find((model) => model.modelId === modelId);
+    const entry = [...ASR_MODELS, ...MODEL_PACKS.filter((pack) => pack.id === 'take-semantics-lite')].find((model) => model.modelId === modelId);
     if (entry) {
       const pinned: ProxyTarget = { modelId, revision: entry.revision, filePath: target.filePath };
       if (fixedModelFile(pinned)) return pinned;

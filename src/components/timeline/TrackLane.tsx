@@ -20,6 +20,7 @@ import { ALL_FX, FX_EFFECTS, LUT_EFFECTS } from '../../gl/fx/effects';
 import { ZOOM_SHAPE_LABELS } from '../../editor/types';
 import { tData, useT } from '../../i18n/locale';
 import { hasOperationalTranscript } from '../../transcript/types';
+import { visibleSegments } from '../../transcript/visibleSegments';
 import {
   CLIP_COLOR, fmt, intersectFrameRange, visibleTimelineItems, waveformPath,
   type EditMode, type TimelineFrameWindow, type TimelineIndexes,
@@ -242,7 +243,10 @@ export function TrackLane({
         applyLibraryToTrack(payload, trackId, f);
       }}
     >
-      {renderedItems.map((it) => {
+      {renderedItems.flatMap((it) => {
+        const segments = visibleSegments(it, state.fps);
+        return segments.map((segment) => {
+        const projected = segments.length > 1;
         const selected = isItemSelected(state, it.id);
         const captionInitiatedDelta = selectionMovePreviewDeltaForItem(it.id, selectionMovePreview);
         const captionInitiatedMove = selectionMovePreview?.itemIds.includes(it.id) ?? false;
@@ -257,15 +261,19 @@ export function TrackLane({
         const moveDelta = captionInitiatedMove
           ? captionInitiatedDelta
           : dragging && drag && (drag.mode === 'move' || drag.mode === 'trim-left') ? drag.deltaF : 0;
-        const start = stretch?.startFrame ?? (it.startFrame + moveDelta);
+        const start = projected
+          ? segment.startFrame + (dragging && drag?.mode === 'move' ? drag.deltaF : captionInitiatedMove ? captionInitiatedDelta : 0)
+          : stretch?.startFrame ?? (it.startFrame + moveDelta);
         const durTrim = drag?.id === it.id && drag.mode === 'trim-left' ? -drag.deltaF
           : drag?.id === it.id && drag.mode === 'trim-right' ? drag.deltaF : 0;
-        const dur = stretch?.durationInFrames ?? Math.max(1, it.durationInFrames + durTrim);
+        const dur = projected ? segment.durationInFrames : stretch?.durationInFrames ?? Math.max(1, it.durationInFrames + durTrim);
         const mediaIntersection = intersectFrameRange(start, dur, visibleWindow);
         const liveSlip = drag?.id === it.id && drag.mode === 'slip'
           ? planSlip(state, it.id, drag.deltaF)
           : null;
-        const renderSrcIn = liveSlip?.ok
+        const renderSrcIn = projected
+          ? segment.sourceStartFrame
+          : liveSlip?.ok
           ? liveSlip.srcInFrame
           : drag?.id === it.id && drag.mode === 'trim-left' && !stretch
             ? sourceWindowForTimelineRange(
@@ -289,7 +297,9 @@ export function TrackLane({
         else if (audioMuted) clipTitle = `${itemName} · ${t('轨道已静音')}`;
         return (
           <div
-            key={it.id}
+            key={`${it.id}:${segment.ordinal}`}
+            data-parent-item-id={segment.parentId}
+            data-segment-ordinal={segment.ordinal}
             className={`cc-timeline-clip${selected ? ' is-selected' : ''}${isLibOver ? ' is-library-over' : ''}${audioMuted ? ' is-audio-muted' : ''}`}
             data-timeline-clip
             title={clipTitle}
@@ -298,6 +308,11 @@ export function TrackLane({
               if (pickMode) { // selection mode: click → item ref, drag → timerange (no editing)
                 commands.selectItem(it.id);
                 startPick(e, 'clip', it);
+                return;
+              }
+              if (projected && (editMode === 'slip' || editMode === 'blade' || editMode === 'pen')) {
+                e.stopPropagation();
+                commands.selectItem(it.id);
                 return;
               }
               if (editMode === 'slip') {
@@ -328,7 +343,7 @@ export function TrackLane({
                 commands.setItemKeyframe(it.id, prop, f, Math.round((lo + frac * (hi - lo)) * 100) / 100);
                 return;
               }
-              startDrag(e, it.id, 'move', it.startFrame, it.durationInFrames, it.track, it.srcInFrame ?? 0);
+              startDrag(e, it.id, 'move', it.startFrame, it.durationInFrames, it.track, it.srcInFrame ?? 0, projected ? segment : undefined);
             }}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -407,9 +422,9 @@ export function TrackLane({
               );
             })()}
             <span className="cc-clip-duration" data-cc-live-duration={dur}>{fmt(dur, state.fps)}</span>
-            <ClipEffectBadges item={it} inTransition={indexes.transitionByIncomingId.get(it.id) ?? null} />
+            {!projected && <ClipEffectBadges item={it} inTransition={indexes.transitionByIncomingId.get(it.id) ?? null} />}
             {/* pen mode: keyframe rubber band on the selected clip (vertical = value; audio = volume 0..2, rest = transparency 0..1)*/}
-            {editMode === 'pen' && selected && (() => {
+            {editMode === 'pen' && selected && !projected && (() => {
               const prop = it.kind === 'audio' ? 'volume' as const : 'opacity' as const;
               const [lo, hi] = getKeyframePropertyDefinition(prop).editorRange;
               const raw = it.keyframes?.[prop] ?? [];
@@ -455,13 +470,14 @@ export function TrackLane({
               );
             })()}
             {/* trim handles (hidden in blade / pen / selection-pick modes) */}
-            {showHandles && <div onPointerDown={(e) => startDrag(e, it.id, 'trim-left', it.startFrame, it.durationInFrames, it.track, it.srcInFrame ?? 0)}
+            {showHandles && !projected && <div onPointerDown={(e) => startDrag(e, it.id, 'trim-left', it.startFrame, it.durationInFrames, it.track, it.srcInFrame ?? 0)}
               style={{ position: 'absolute', left: 0, top: 0, width: 8, height: '100%', cursor: 'ew-resize', background: editMode === 'trim' || editMode === 'rate-stretch' ? themeAlpha.accent(0.5) : selected ? themeAlpha.shadow(0.25) : 'transparent' }} />}
             <span className={`cc-clip-label${it.kind === 'audio' ? ' audio' : ''}`}>{itemName}</span>
-            {showHandles && <div onPointerDown={(e) => startDrag(e, it.id, 'trim-right', it.startFrame, it.durationInFrames, it.track, it.srcInFrame ?? 0)}
+            {showHandles && !projected && <div onPointerDown={(e) => startDrag(e, it.id, 'trim-right', it.startFrame, it.durationInFrames, it.track, it.srcInFrame ?? 0)}
               style={{ position: 'absolute', right: 0, top: 0, width: 8, height: '100%', cursor: 'ew-resize', background: editMode === 'trim' || editMode === 'rate-stretch' ? themeAlpha.accent(0.5) : selected ? themeAlpha.shadow(0.25) : 'transparent' }} />}
           </div>
         );
+      });
       })}
       {/* transition badges at each cut on this track */}
       {visibleTransitions.map((tn) => {

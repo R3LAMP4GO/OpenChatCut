@@ -74,6 +74,7 @@ interface LibraryPanelProps {
   onUpdateCaptions: (patch: Partial<CaptionsData>, track?: TrackId) => void;
   onSetItemTranscript: (id: string, words: TranscriptWord[]) => void;
   onToggleWord: (id: string, idx: number) => void;
+  onDeleteWords: (id: string, indexes: number[]) => void;
   onCleanScript: (id: string, opts: { silenceFrames?: number; removeFillers: boolean }) => void;
   onSetGapCap: (id: string, afterWordIndex: number, maxMs: number | null) => void;
   onSetTranscriptPlayOrder: (id: string, playOrder: number[] | null) => void;
@@ -138,7 +139,7 @@ function localizeDefaultSequenceName(name: string, t: ReturnType<typeof useT>): 
   const match = /^序列 (\d+)$/.exec(name);
   return match ? t('序列 {n}', { n: match[1]! }) : name;
 }
-export function LibraryPanel({ semanticScopeId, templates, onAddTemplate, onAddAudio, playerRef, fps, items, sequenceOptions, onAddSequence, trackOptions, captionTracks, onSetCaptions, onCreateCaptionTrack, onUpdateCaptions, onSetItemTranscript, onToggleWord, onCleanScript, onSetGapCap, onSetTranscriptPlayOrder, onReorderTrackItems, onClearEdits, assets, mediaFolders, usedAssetIds, offlineAssetIds, onAssetLoadError, onImportMedia, onImportMobileMedia, onIngestDirectoryAsset, onTranscribeAsset, onTakeBatchCreated, takeReviewSessions, onSelectTakeCandidate, onSetTakeRanges, onSelectTakeRange, onInsertTakeRange, onAddMediaItem, onAddMediaAssetsToTimeline, onUseMediaAI, onCreateMediaFolder, onRenameMediaFolder, onDeleteMediaFolder, onMoveMediaAssets, onRenameMediaAsset, onRenameMediaAssets, onSetMediaAssetFavorite, onSetMediaAssetsFavorite, onRemoveMediaAsset, onRemoveMediaAssets, onPasteMediaAssets, onRelinkMediaAsset, creativeMode, onCreativeModeChange, onAddSolid, onUseTemplateAI, selectedItem, onApplyTransition, onApplyFx, onApplyZoom }: LibraryPanelProps) {
+export function LibraryPanel({ semanticScopeId, templates, onAddTemplate, onAddAudio, playerRef, fps, items, sequenceOptions, onAddSequence, trackOptions, captionTracks, onSetCaptions, onCreateCaptionTrack, onUpdateCaptions, onSetItemTranscript, onToggleWord, onDeleteWords, onCleanScript, onSetGapCap, onSetTranscriptPlayOrder, onReorderTrackItems, onClearEdits, assets, mediaFolders, usedAssetIds, offlineAssetIds, onAssetLoadError, onImportMedia, onImportMobileMedia, onIngestDirectoryAsset, onTranscribeAsset, onTakeBatchCreated, takeReviewSessions, onSelectTakeCandidate, onSetTakeRanges, onSelectTakeRange, onInsertTakeRange, onAddMediaItem, onAddMediaAssetsToTimeline, onUseMediaAI, onCreateMediaFolder, onRenameMediaFolder, onDeleteMediaFolder, onMoveMediaAssets, onRenameMediaAsset, onRenameMediaAssets, onSetMediaAssetFavorite, onSetMediaAssetsFavorite, onRemoveMediaAsset, onRemoveMediaAssets, onPasteMediaAssets, onRelinkMediaAsset, creativeMode, onCreativeModeChange, onAddSolid, onUseTemplateAI, selectedItem, onApplyTransition, onApplyFx, onApplyZoom }: LibraryPanelProps) {
   const t = useT();
   const selKind = selectedItem?.kind ?? null;
   const isVisual = selKind != null && selKind !== 'audio';
@@ -258,7 +259,7 @@ export function LibraryPanel({ semanticScopeId, templates, onAddTemplate, onAddA
         <CaptionsPanel playerRef={playerRef} fps={fps} items={items} captionTracks={captionTracks} onSetCaptions={onSetCaptions} onUpdateCaptions={onUpdateCaptions} />
       ) : isTranscript ? (
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, borderTop: `0.5px solid ${theme.border}` }}>
-          <TranscriptPanel playerRef={playerRef} fps={fps} items={items} trackOptions={trackOptions} onSetItemTranscript={onSetItemTranscript} onToggleWord={onToggleWord} onCleanScript={onCleanScript} onSetGapCap={onSetGapCap} onSetTranscriptPlayOrder={onSetTranscriptPlayOrder} onReorderTrackItems={onReorderTrackItems} onClearEdits={onClearEdits} onImportSrt={(file) => { void importSrt(file); }} onOpenCaptionStyles={openCaptionStyles} />
+          <TranscriptPanel playerRef={playerRef} fps={fps} items={items} trackOptions={trackOptions} onSetItemTranscript={onSetItemTranscript} onToggleWord={onToggleWord} onDeleteWords={onDeleteWords} onCleanScript={onCleanScript} onSetGapCap={onSetGapCap} onSetTranscriptPlayOrder={onSetTranscriptPlayOrder} onReorderTrackItems={onReorderTrackItems} onClearEdits={onClearEdits} onImportSrt={(file) => { void importSrt(file); }} onOpenCaptionStyles={openCaptionStyles} />
         </div>
       ) : isSequences ? (
         <div className="cc-sequence-panel">

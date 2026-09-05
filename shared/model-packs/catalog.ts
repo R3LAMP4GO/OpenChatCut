@@ -1,4 +1,4 @@
-export type ModelPackId = 'rhythm-lite' | 'music-semantics-lite' | 'visual-semantics-lite';
+export type ModelPackId = 'rhythm-lite' | 'music-semantics-lite' | 'visual-semantics-lite' | 'take-semantics-lite';
 
 export type ModelPackCapability =
   | '节拍定位'
@@ -9,7 +9,8 @@ export type ModelPackCapability =
   | '音乐相似度'
   | '画面语义向量'
   | '中文画面检索'
-  | '重复镜头检测';
+  | '重复镜头检测'
+  | '转写复述匹配';
 
 export interface ModelPackFile {
   readonly path: string;
@@ -154,6 +155,25 @@ export const MODEL_PACKS = [
         sizeBytes: 177_674_264,
         sha256: 'c64c40f177a8756c7831cdaa932bfb30187ef2e85266e54ec838259d34d3fe2e',
       },
+    ],
+  },
+  {
+    id: 'take-semantics-lite',
+    label: '转写复述匹配轻量包',
+    description: '在本机生成句子向量，用于识别转写中的复述与重录。',
+    modelId: 'Xenova/all-MiniLM-L6-v2',
+    revision: '751bff37182d3f1213fa05d7196b954e230abad9',
+    license: 'Apache-2.0',
+    sizeBytes: 23_216_680,
+    recommendedMemoryBytes: 1 * GIB,
+    capabilities: ['转写复述匹配'],
+    files: [
+      { path: 'config.json', sizeBytes: 650, sha256: '7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7' },
+      { path: 'special_tokens_map.json', sizeBytes: 125, sha256: 'b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3' },
+      { path: 'tokenizer.json', sizeBytes: 711_661, sha256: 'da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0' },
+      { path: 'tokenizer_config.json', sizeBytes: 366, sha256: '9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3' },
+      { path: 'vocab.txt', sizeBytes: 231_508, sha256: '07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3' },
+      { path: 'onnx/model_quantized.onnx', sizeBytes: 22_972_370, sha256: 'afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1' },
     ],
   },
 ] as const satisfies readonly ModelPackDefinition[];

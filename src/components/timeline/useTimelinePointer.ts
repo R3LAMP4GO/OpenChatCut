@@ -25,6 +25,7 @@ import {
 } from '../../captions/captionGroupMove';
 import { emitSelectionRef, resolveTimelinePick, type TimelinePickDrag } from '../../agent/selection-refs';
 import { hasOperationalTranscript } from '../../transcript/types';
+import type { VisibleSegment } from '../../transcript/visibleSegments';
 import { SNAP_PX, type Drag, type DragMode, type EditMode } from './timelineUtil';
 
 export interface PenDrag {
@@ -242,7 +243,20 @@ export function useTimelinePointer(deps: PointerDeps) {
     });
   };
 
-  const startDrag = (e: React.PointerEvent, id: string, mode: DragMode, baseStart: number, baseDur: number, baseTrack: TrackId, baseSrcIn = 0) => {
+  const startDrag = (
+    e: React.PointerEvent,
+    itemId: string,
+    mode: DragMode,
+    baseStart: number,
+    baseDur: number,
+    baseTrack: TrackId,
+    baseSrcIn = 0,
+    visibleSegment?: VisibleSegment,
+  ) => {
+    // A projected segment is only a view. Moving its parent preserves every source
+    // range and their order; source-changing gestures must stay transcript-driven.
+    if (visibleSegment && mode !== 'move') return;
+    const id = visibleSegment?.parentId ?? itemId;
     if (state.tracks?.[baseTrack]?.locked) return;
     const wasSelected = isItemSelected(state, id);
     const additive = e.metaKey || e.ctrlKey;

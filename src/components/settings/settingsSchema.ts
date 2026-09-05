@@ -271,6 +271,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
           { key: 'local/asr', vendor: 'localasr', title: '本地转写', icon: 'mic', kind: 'local-models', fields: localAsrPage.fields },
           { key: 'local/music/packs', vendor: 'localasr', title: '节拍与音乐分析', icon: 'music', kind: 'local-models', fields: [] },
           { key: 'local/semantic/setup', vendor: 'localasr', title: '画面语义搜索', icon: 'search', kind: 'local-models', fields: [] },
+          { key: 'local/takes/setup', vendor: 'localasr', title: '转写复述匹配', icon: 'mic', kind: 'local-models', fields: [] },
         ] },
     ],
   },

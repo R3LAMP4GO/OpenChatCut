@@ -12,35 +12,42 @@ import {
 import { msToFrame, type TranscriptWord } from './types';
 import { Icon } from '../components/icons';
 import { useT } from '../i18n/locale';
+import { canStartSpeechReorder } from './speechReorder';
+import type { TakeWordHighlight } from '../takes/TranscriptTakeReview';
 
 interface WordRowProps {
   words: IndexedWord[];
   deleted: Set<number>;
   editMode: boolean;
   onWord: (w: IndexedWord) => void;
+  takeHighlights?: ReadonlyMap<number, TakeWordHighlight>;
+  selectedWordIndexes?: ReadonlySet<number>;
 }
 
 // memo: drag-over/gap-adjust state changes in ScriptView re-render the block
 // list only; word spans (thousands on long transcripts) keep stable props.
-const WordRow = memo(function WordRow({ words, deleted, editMode, onWord }: WordRowProps) {
+const WordRow = memo(function WordRow({ words, deleted, editMode, onWord, takeHighlights, selectedWordIndexes }: WordRowProps) {
   const t = useT();
   const cjk = isCjkText(words.map((w) => w.text).join(''));
   return (
     <span className="cc-tx-words" style={{ color: theme.text }}>
       {words.map((w, i) => {
         const isDel = deleted.has(w.gi);
+        const take = takeHighlights?.get(w.gi);
+        const selectedForDelete = selectedWordIndexes?.has(w.gi) === true;
         const prev = words[i - 1];
         const needSpace = !cjk && i > 0 && prev && !/^\s/.test(w.text) && !/\s$/.test(prev.text);
         return (
           <span key={w.gi}>
             {needSpace ? ' ' : null}
             <span
-              className={`cc-tx-word${isDel ? ' del' : ''}${editMode ? ' editable' : ''}`}
+              className={`cc-tx-word${isDel ? ' del' : ''}${editMode ? ' editable' : ''}${take ? ' take-highlight' : ''}${selectedForDelete ? ' delete-selected' : ''}`}
               data-gi={w.gi}
               onClick={() => onWord(w)}
               title={editMode ? (isDel ? t('恢复此词') : t('删除此词')) : `${(w.start / 1000).toFixed(2)}s`}
             >
               {w.text}
+              {take && <button type="button" className="cc-tx-take-label" onClick={(event) => { event.stopPropagation(); take.onKeep(); }} aria-label={`${take.label}: keep this take`}>{take.label}</button>}
             </span>
           </span>
         );
@@ -84,6 +91,8 @@ interface ScriptViewProps {
   deleted: Set<number>;
   editMode: boolean;
   fps: number;
+  takeHighlights?: ReadonlyMap<number, TakeWordHighlight>;
+  selectedWordIndexes?: ReadonlySet<number>;
   gapCapsMs?: Record<string, number>;
   silenceFrames?: number;
   playOrder?: number[];
@@ -97,7 +106,7 @@ interface ScriptViewProps {
 
 /** Script view with draggable speaker blocks and gap rows. */
 export function ScriptView({
-  words, deleted, editMode, fps, gapCapsMs, silenceFrames, playOrder, minDisplayMs,
+  words, deleted, editMode, fps, gapCapsMs, silenceFrames, playOrder, minDisplayMs, takeHighlights, selectedWordIndexes,
   onWord, onDeleteGap, onCapGap, onReorderSpeech,
 }: ScriptViewProps) {
   const t = useT();
@@ -108,6 +117,7 @@ export function ScriptView({
   }), [words, deleted, gapCapsMs, silenceFrames, fps, minDisplayMs, playOrder]);
   const [adjustGi, setAdjustGi] = useState<number | null>(null);
   const dragSpeechFrom = useRef<number | null>(null);
+  const [dragHandle, setDragHandle] = useState<number | null>(null);
   const [dragOverSpeech, setDragOverSpeech] = useState<number | null>(null);
 
   if (!rows.length) {
@@ -144,15 +154,16 @@ export function ScriptView({
             <div
               key={`s-${i}-${row.words[0]?.gi}`}
               className={`cc-tx-speech${dragOverSpeech === sOrd ? ' drag-over' : ''}`}
-              draggable={canDrag}
+              draggable={canStartSpeechReorder(canDrag, dragHandle, sOrd)}
               onDragStart={(e) => {
-                if (!canDrag) return;
+                if (!canStartSpeechReorder(canDrag, dragHandle, sOrd)) { e.preventDefault(); return; }
                 dragSpeechFrom.current = sOrd;
                 e.dataTransfer.effectAllowed = 'move';
                 e.dataTransfer.setData('text/plain', `speech:${sOrd}`);
               }}
               onDragEnd={() => {
                 dragSpeechFrom.current = null;
+                setDragHandle(null);
                 setDragOverSpeech(null);
               }}
               onDragOver={(e) => {
@@ -168,6 +179,7 @@ export function ScriptView({
                 e.preventDefault();
                 const from = dragSpeechFrom.current;
                 dragSpeechFrom.current = null;
+                setDragHandle(null);
                 setDragOverSpeech(null);
                 if (from == null) return;
                 applySpeechReorder(from, sOrd);
@@ -180,10 +192,12 @@ export function ScriptView({
                 <span
                   className={`cc-tx-grip${canDrag ? ' active' : ''}`}
                   title={canDrag ? t('拖动以重排语段（同步播放顺序）') : t('当前仅一段，无法重排')}
+                  onPointerDown={(event) => { if (!canDrag) return; event.stopPropagation(); setDragHandle(sOrd); }}
+                  onPointerUp={() => setDragHandle(null)}
                 >
                   ⋮⋮
                 </span>
-                <WordRow words={row.words} deleted={deleted} editMode={editMode} onWord={onWord} />
+                <WordRow words={row.words} deleted={deleted} editMode={editMode} onWord={onWord} takeHighlights={takeHighlights} selectedWordIndexes={selectedWordIndexes} />
               </div>
             </div>
           );

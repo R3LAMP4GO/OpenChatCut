@@ -323,7 +323,7 @@ function TimelineContent({ state, project, transparent, browserRenderer = false,
               ? <TextLayer item={item} canvasW={state.width} canvasH={state.height} fit={fit} />
               : item.kind === 'solid'
               ? <SolidLayer item={item} canvasW={state.width} canvasH={state.height} borderRadius={borderRadius} />
-              : <MediaFill item={item} frameOffset={-eb} fit={fillBackground ? 'contain' : fit}
+              : <MediaFill item={item} fps={state.fps} frameOffset={-eb} fit={fillBackground ? 'contain' : fit}
                   muted={isMuted(item.track)} groupedAudio={groupedVideoIds.has(item.id)}
                   gainAt={(frame) => duckGain(item.track, frame)} canvasW={state.width} canvasH={state.height}
                   borderRadius={borderRadius} browserRenderer={browserRenderer}

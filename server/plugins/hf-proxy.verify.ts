@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASR_MODELS } from '../../shared/asr-models';
+import { modelPackDefinition } from '../../shared/model-packs/catalog';
 import {
   downloadModelFile,
   handleHfProxyRequest,
@@ -23,11 +24,24 @@ import { openVerifiedFile } from './hf-integrity';
 const RHYTHM_REVISION = '4e971bd43753023e1bf961c34a0cb74985cfcb88';
 const CLAP_REVISION = 'c28f2883575e590e04d3146ff0713c2448d691ba';
 const rhythmPath = `/musetric/beat-this-onnx/resolve/${RHYTHM_REVISION}/beat_this.onnx`;
+const takeSemanticPack = modelPackDefinition('take-semantics-lite')!;
+const takeSemanticFile = takeSemanticPack.files.at(-1)!;
+const takeSemanticPath = `/${takeSemanticPack.modelId}/resolve/${takeSemanticPack.revision}/${takeSemanticFile.path}`;
 
 assert.deepEqual(parseTarget(rhythmPath), {
   modelId: 'musetric/beat-this-onnx',
   revision: RHYTHM_REVISION,
   filePath: 'beat_this.onnx',
+});
+assert.deepEqual(parseTarget(takeSemanticPath), {
+  modelId: takeSemanticPack.modelId,
+  revision: takeSemanticPack.revision,
+  filePath: takeSemanticFile.path,
+});
+assert.deepEqual(parseTarget(`/${takeSemanticPack.modelId}/resolve/main/${takeSemanticFile.path}`), {
+  modelId: takeSemanticPack.modelId,
+  revision: takeSemanticPack.revision,
+  filePath: takeSemanticFile.path,
 });
 assert.deepEqual(
   parseTarget(`/Xenova/clap-htsat-unfused/resolve/${CLAP_REVISION}/onnx/audio_model_quantized.onnx`),

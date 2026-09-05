@@ -74,7 +74,7 @@ export function VersionHistory({ projectId, currentDoc, onRestore, onClose }: Ve
               <div key={v.id} style={row}>
                 <span style={{ color: theme.textDim, lineHeight: 0 }}><Icon name="clock" size={14} /></span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.name}</div>
+                  <div style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.automatic ? t('自动保存') : v.name}</div>
                   <div style={{ fontSize: 11, color: theme.textDim }}>{relTime(v.createdAt)}</div>
                 </div>
                 <button onClick={() => { onRestore(v.doc); onClose(); }} style={ghostBtn}>{t('恢复')}</button>

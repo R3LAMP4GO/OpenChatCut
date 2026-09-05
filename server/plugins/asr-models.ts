@@ -31,6 +31,10 @@ const inspections = new Map<string, {
   result: { downloaded: boolean; bytes: number };
 }>();
 
+export function asrGgmlCachePath(cacheRoot: string, fileName: string): string {
+  return join(cacheRoot, 'ggml', fileName);
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   if (res.destroyed || res.writableEnded) return;
   res.statusCode = status;
@@ -218,13 +222,13 @@ async function startDownload(id: string): Promise<AsrDownloadTask> {
         task.bytesDone += file.sizeBytes;
       }
       if (ggml) {
-        const ggmlPath = join(modelCacheDir(), 'ggml', ggml.fileName);
+        const ggmlPath = asrGgmlCachePath(modelCacheDir(), ggml.fileName);
         const ggmlFile = { path: ggmlPath, sizeBytes: ggml.sizeBytes, sha256: ggml.sha256 };
         if (!(await modelFileVerified(ggmlPath, ggmlFile))) {
           await rm(ggmlPath, { force: true });
           await downloadModelFile(
             { modelId: 'ggerganov/whisper.cpp', revision: ggml.revision, filePath: ggml.fileName },
-            undefined,
+            ggmlPath,
             { expectedBytes: ggml.sizeBytes, expectedSha256: ggml.sha256 },
           );
         }
@@ -247,7 +251,7 @@ async function deleteModel(id: string): Promise<boolean> {
   if (task?.status === 'downloading') throw new Error(`model ${id} is downloading`);
   await rm(join(modelCacheDir(), entry.modelId), { recursive: true, force: true });
   if (entry.ggmlFile) {
-    await rm(join(modelCacheDir(), 'ggml', entry.ggmlFile.fileName), { force: true });
+    await rm(asrGgmlCachePath(modelCacheDir(), entry.ggmlFile.fileName), { force: true });
   }
   tasks.delete(id);
   inspections.delete(`${modelCacheDir()}\0${entry.modelId}`);

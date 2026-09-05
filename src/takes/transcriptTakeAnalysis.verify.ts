@@ -20,7 +20,13 @@ assert.equal(report.falsePositives, 0, report.disagreements.join('\n'));
 assert.equal(report.falseNegatives, 0, report.disagreements.join('\n'));
 assert.deepEqual(report.disagreements, [], report.disagreements.join('\n'));
 assert.ok(Math.min(...report.scoreDistributions.GROUPED) >= 0.72, 'grouping threshold must be supported by labeled positives');
-assert.ok(Math.max(...report.scoreDistributions.SEPARATE) < 0.56, 'possible-match threshold must separate labeled negatives');
+const paraphrase = TAKE_DETECTION_FIXTURES.find((fixture) => fixture.sourceItemId === 'paraphrase')!;
+const addition = TAKE_DETECTION_FIXTURES.find((fixture) => fixture.sourceItemId === 'addition')!;
+const rhetoricalRepeat = TAKE_DETECTION_FIXTURES.find((fixture) => fixture.sourceItemId === 'emphasis')!;
+assert.equal(analyzeTranscriptTakes(paraphrase).groups.length, 1, 'full-span paraphrases can be safe retakes');
+assert.equal(analyzeTranscriptTakes(paraphrase, { semanticScorer: () => 0 }).groups.length, 0, 'paraphrases require strong semantic agreement');
+assert.equal(analyzeTranscriptTakes(addition, { semanticScorer: () => 1 }).groups.length, 0, 'added information stays review-only even with semantic agreement');
+assert.equal(analyzeTranscriptTakes(rhetoricalRepeat).groups.length, 0, 'rapid rhetorical repetition is never grouped');
 for (const mutation of [
   { groupingThreshold: 0.99 },
   { semanticScorer: () => 0 },

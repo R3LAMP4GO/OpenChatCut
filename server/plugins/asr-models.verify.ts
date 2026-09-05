@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASR_MODELS, asrModelEntry, asrModelFile, type AsrModelEntry } from '../../shared/asr-models';
-import { __resetAsrTasks, handleAsrModelsRequest, inspectAsrModel } from './asr-models';
+import { __resetAsrTasks, asrGgmlCachePath, handleAsrModelsRequest, inspectAsrModel } from './asr-models';
 
 const server = createServer((req, res) => {
   const pathname = (req.url ?? '').split('?')[0] ?? '';
@@ -122,6 +122,7 @@ try {
 // keeps the tier not-downloaded even when every ONNX file is present.
 {
   const ggmlRoot = join(root, 'ggml');
+  assert.equal(asrGgmlCachePath(root, 'ggml-test.bin'), join(ggmlRoot, 'ggml-test.bin'), 'GGML downloads must use the path inspection checks');
   const ggmlBytes = Buffer.from('ggml');
   const ggmlEntry: AsrModelEntry = {
     ...entry,

@@ -141,7 +141,7 @@ function LocalModelsPane({ page, fields, ctx }: {
   page: SettingsVendorPage; fields: readonly SettingsField[]; ctx: FieldCtx;
 }) {
   const t = useT();
-  const title = page.key === 'local/asr' ? '本地转写' : page.key === 'local/music/packs' ? '节拍与音乐分析' : '画面语义搜索';
+  const title = page.key === 'local/asr' ? '本地转写' : page.key === 'local/music/packs' ? '节拍与音乐分析' : page.key === 'local/takes/setup' ? '转写复述匹配' : '画面语义搜索';
   return (
     <div style={pane}>
       <div>
@@ -159,6 +159,10 @@ function LocalModelsPane({ page, fields, ctx }: {
         title="节拍与音乐分析模型"
         description="模型不会自动安装。安装后，节拍与音乐语义分析只在本机运行。" />}
       {page.key === 'local/semantic/setup' && <SemanticModelPackPane />}
+      {page.key === 'local/takes/setup' && <LocalModelPackPane
+        packIds={['take-semantics-lite']}
+        title="转写复述匹配模型"
+        description="模型不会自动安装。安装后，复述与重录匹配只在本机运行。" />}
     </div>
   );
 }

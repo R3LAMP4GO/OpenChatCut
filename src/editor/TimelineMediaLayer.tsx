@@ -9,8 +9,9 @@ import { AbsoluteFill, Audio as ServerAudio, Img, Sequence, useCurrentFrame } fr
 import { ClipFx } from '../gl/ClipFx';
 import { firstGlEffect } from '../gl/clipEffects';
 import { selectEffectPreviewAdapter, type SelectedPreviewStatusListener } from '../gl/previewAdapter';
-import { itemEditOpts, itemWindow, keptSegments, usesEditedWordFlow } from '../transcript/edit';
+import { usesEditedWordFlow } from '../transcript/edit';
 import { hasOperationalTranscript } from '../transcript/types';
+import { visibleSegments } from '../transcript/visibleSegments';
 import { voiceIsolationMix } from '../audio/voiceMix';
 import { backgroundFillAppearanceFor, backgroundFillFilter } from './backgroundFill';
 import { appearanceAt } from './clipFade';
@@ -120,16 +121,12 @@ export function AudioClip({ item, fps, muted, gainAt, transitions, premountFor, 
   const volumeAt = (localFrame: number) => (muted ? 0 : volumeAtFrame(item, localFrame));
   if (!item.src) return null;
   if (hasOperationalTranscript(item) && usesEditedWordFlow(item)) {
-    const deleted = new Set(item.deletedWordIdx ?? []);
-    return <>{keptSegments(item.transcript, deleted, fps, item.startFrame, {
-      ...itemEditOpts(item),
-      window: itemWindow(item),
-    }).map((segment, index) => (
-      <Sequence key={`${item.id}_${index}`} from={segment.fromFrame} durationInFrames={segment.durFrames} premountFor={premountFor} name={item.name}>
-        <MixedRuntimeAudio item={item} browserRenderer={browserRenderer} trimBefore={segment.srcStartFrame} trimAfter={segment.srcEndFrame}
-          volume={(frame) => volumeAt(segment.fromFrame - item.startFrame + frame) * gainAt(segment.fromFrame + frame)
-            * clipFadeFactor(segment.fromFrame - item.startFrame + frame, item.durationInFrames, item.fadeInFrames, item.fadeOutFrames)
-            * audioCrossfadeMultiplier(item, segment.fromFrame - item.startFrame + frame, transitions)} />
+    return <>{visibleSegments(item, fps).map((segment) => (
+      <Sequence key={`${item.id}_${segment.ordinal}`} from={segment.startFrame} durationInFrames={segment.durationInFrames} premountFor={premountFor} name={item.name}>
+        <MixedRuntimeAudio item={item} browserRenderer={browserRenderer} trimBefore={segment.sourceStartFrame} trimAfter={segment.sourceEndFrame}
+          volume={(frame) => volumeAt(segment.startFrame - item.startFrame + frame) * gainAt(segment.startFrame + frame)
+            * clipFadeFactor(segment.startFrame - item.startFrame + frame, item.durationInFrames, item.fadeInFrames, item.fadeOutFrames)
+            * audioCrossfadeMultiplier(item, segment.startFrame - item.startFrame + frame, transitions)} />
       </Sequence>
     ))}</>;
   }
@@ -278,6 +275,7 @@ export function BackgroundFillLayer({ item, frameOffset, canvasW, canvasH, brows
 
 interface MediaFillProps {
   item: TimelineItem;
+  fps: number;
   frameOffset: number;
   fit: AspectFit;
   muted: boolean;
@@ -315,6 +313,15 @@ function EffectMediaFill({ props, trimBefore, volume }: {
   );
 }
 
+function EditedVideoFill({ props, volume }: { props: MediaFillProps; volume: MediaVolume }) {
+  const { item, fps } = props;
+  return <>{visibleSegments(item, fps).map((segment) => (
+    <Sequence key={`${item.id}_visual_${segment.ordinal}`} from={segment.startFrame - item.startFrame} durationInFrames={segment.durationInFrames}>
+      <PlainMediaFill props={props} trimBefore={segment.sourceStartFrame} volume={(frame) => volume(frame + segment.startFrame - item.startFrame)} />
+    </Sequence>
+  ))}</>;
+}
+
 function PlainMediaFill({ props, trimBefore, volume }: {
   props: MediaFillProps;
   trimBefore: number;
@@ -348,6 +355,9 @@ export function MediaFill(props: MediaFillProps) {
     return (muted ? 0 : volumeAtFrame(item, localFrame)) * gainAt(item.startFrame + localFrame)
       * clipFadeFactor(localFrame, item.durationInFrames, item.fadeInFrames, item.fadeOutFrames);
   };
+  if (item.kind === 'video' && hasOperationalTranscript(item) && usesEditedWordFlow(item) && !firstGlEffect(item)) {
+    return <EditedVideoFill props={props} volume={volume} />;
+  }
   const adapter = selectEffectPreviewAdapter({
     declared: !!firstGlEffect(item),
     texturable: item.kind === 'video' || item.kind === 'image',

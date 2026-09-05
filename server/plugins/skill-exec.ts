@@ -8,8 +8,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { access } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import { access, readFile } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { skillDirFor, skillFilesRoot } from '../skills-files.ts';
 
 const execFileAsync = promisify(execFile);
@@ -56,11 +56,46 @@ export function interpreterGuardError(dir: string, binary: string, args: string[
 
 const MAX_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 512 * 1024;
+const MAX_MANIFEST_BYTES = 64 * 1024;
+const ENTRYPOINT_RE = /^[A-Za-z0-9_-]{1,80}$/;
 
 interface ExecRequest {
-  command: string;
+  command?: string;
   args: string[];
+  entrypoint?: string;
+  values: Record<string, unknown>;
   timeout?: number;
+}
+
+interface ManifestArg {
+  type: 'string' | 'number' | 'boolean' | 'enum';
+  required?: boolean;
+  flag?: string;
+  values?: string[];
+  min?: number;
+  max?: number;
+  maxLength?: number;
+}
+
+interface ManifestEntrypoint {
+  binary: string;
+  script?: string;
+  fixedArgs?: string[];
+  args?: Record<string, ManifestArg>;
+  timeoutMs?: number;
+}
+
+interface SkillWorkflowManifest {
+  version: 1;
+  entrypoints: Record<string, ManifestEntrypoint>;
+}
+
+interface ResolvedInvocation {
+  binary: string;
+  args: string[];
+  timeout: number;
+  mode: 'manifest' | 'legacy';
+  script?: string;
 }
 
 function readJson(req: IncomingMessage): Promise<ExecRequest> {
@@ -75,18 +110,20 @@ function readJson(req: IncomingMessage): Promise<ExecRequest> {
     req.on('end', () => {
       try {
         const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Partial<ExecRequest>;
-        if (typeof parsed.command !== 'string' || !parsed.command.trim()) {
-          rejectPromise(new Error('command is required'));
-          return;
-        }
+        const command = typeof parsed.command === 'string' ? parsed.command.trim() : '';
+        const entrypoint = typeof parsed.entrypoint === 'string' ? parsed.entrypoint.trim() : '';
+        if (!command && !entrypoint) throw new Error('entrypoint or legacy command is required');
+        if (command && entrypoint) throw new Error('provide entrypoint or command, not both');
         resolvePromise({
-          command: parsed.command.trim(),
-          args: Array.isArray(parsed.args)
-            ? parsed.args.filter((a): a is string => typeof a === 'string')
-            : [],
-          timeout: typeof parsed.timeout === 'number' ? parsed.timeout : 60_000,
+          ...(command ? { command } : {}),
+          ...(entrypoint ? { entrypoint } : {}),
+          args: Array.isArray(parsed.args) ? parsed.args.filter((arg): arg is string => typeof arg === 'string') : [],
+          values: parsed.values && typeof parsed.values === 'object' && !Array.isArray(parsed.values) ? parsed.values : {},
+          timeout: typeof parsed.timeout === 'number' ? parsed.timeout : undefined,
         });
-      } catch { rejectPromise(new Error('invalid JSON')); }
+      } catch (error) {
+        rejectPromise(error instanceof Error ? error : new Error('invalid JSON'));
+      }
     });
     req.on('error', rejectPromise);
   });
@@ -103,35 +140,111 @@ function truncateOutput(text: string): string {
   return `${text.slice(0, MAX_OUTPUT_BYTES)}\n…[truncated]`;
 }
 
-/** Run one whitelisted binary inside the skill directory. */
-async function runInSkillDir(slug: string, body: ExecRequest): Promise<unknown> {
-  const root = skillFilesRoot();
-  const dir = skillDirFor(root, slug);
-  if (!dir) return { error: `invalid skill slug "${slug}"` };
-  try {
-    await access(join(dir, 'SKILL.md'));
-  } catch {
-    return { error: `skill "${slug}" is not installed (no SKILL.md in ${dir})` };
+function boundedTimeout(value: number | undefined): number {
+  return Math.min(Math.max(value ?? 60_000, 1_000), MAX_TIMEOUT_MS);
+}
+
+function safeScript(dir: string, script: string): string {
+  if (!script || isAbsolute(script)) throw new Error('manifest script must be a relative path');
+  const path = resolve(dir, script);
+  const rel = relative(dir, path);
+  if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error('manifest script escapes the skill directory');
   }
-  const binary = body.command.split(/\s+/)[0] ?? '';
-  if (!ALLOWED_BINARIES.has(binary)) {
-    return { error: `command not allowed: "${binary}" — whitelist: ${[...ALLOWED_BINARIES].sort().join(', ')}` };
+  return rel;
+}
+
+function validateFlag(flag: unknown): string | undefined {
+  if (flag === undefined) return undefined;
+  if (typeof flag !== 'string' || !/^--?[A-Za-z0-9][A-Za-z0-9-]*$/.test(flag)) {
+    throw new Error(`invalid manifest flag ${String(flag)}`);
   }
-  const rest = body.command.slice(binary.length).trim();
-  const args = rest ? rest.split(/\s+/) : [];
-  args.push(...body.args);
-  const guardError = interpreterGuardError(dir, binary, args);
-  if (guardError) return { error: guardError };
-  const timeout = Math.min(Math.max(body.timeout ?? 60_000, 1_000), MAX_TIMEOUT_MS);
+  return flag;
+}
+
+function argumentValue(name: string, spec: ManifestArg, raw: unknown): string[] {
+  const flag = validateFlag(spec.flag);
+  if (raw === undefined || raw === null || raw === '') {
+    if (spec.required) throw new Error(`entrypoint argument ${name} is required`);
+    return [];
+  }
+  if (spec.type === 'boolean') {
+    if (typeof raw !== 'boolean') throw new Error(`entrypoint argument ${name} must be boolean`);
+    if (!flag) throw new Error(`boolean entrypoint argument ${name} requires a flag`);
+    return raw ? [flag] : [];
+  }
+  let value: string;
+  if (spec.type === 'number') {
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) throw new Error(`entrypoint argument ${name} must be a finite number`);
+    if ((spec.min !== undefined && raw < spec.min) || (spec.max !== undefined && raw > spec.max)) {
+      throw new Error(`entrypoint argument ${name} is out of range`);
+    }
+    value = String(raw);
+  } else {
+    if (typeof raw !== 'string') throw new Error(`entrypoint argument ${name} must be a string`);
+    if (raw.length > Math.min(spec.maxLength ?? 1_000, 4_000)) throw new Error(`entrypoint argument ${name} is too long`);
+    if (spec.type === 'enum' && (!Array.isArray(spec.values) || !spec.values.includes(raw))) {
+      throw new Error(`entrypoint argument ${name} is not an allowed value`);
+    }
+    value = raw;
+  }
+  return flag ? [flag, value] : [value];
+}
+
+export async function resolveManifestInvocation(dir: string, body: ExecRequest): Promise<ResolvedInvocation> {
+  if (!body.entrypoint) {
+    const command = body.command ?? '';
+    const binary = command.split(/\s+/)[0] ?? '';
+    if (!ALLOWED_BINARIES.has(binary)) {
+      throw new Error(`command not allowed: "${binary}" — whitelist: ${[...ALLOWED_BINARIES].sort().join(', ')}`);
+    }
+    const rest = command.slice(binary.length).trim();
+    return { binary, args: [...(rest ? rest.split(/\s+/) : []), ...body.args], timeout: boundedTimeout(body.timeout), mode: 'legacy' };
+  }
+
+  if (!ENTRYPOINT_RE.test(body.entrypoint)) throw new Error('invalid entrypoint name');
+  const raw = await readFile(resolve(dir, 'workflow.json'));
+  if (raw.byteLength > MAX_MANIFEST_BYTES) throw new Error('workflow.json is too large');
+  const manifest = JSON.parse(raw.toString('utf8')) as SkillWorkflowManifest;
+  if (manifest.version !== 1 || !manifest.entrypoints || typeof manifest.entrypoints !== 'object') {
+    throw new Error('invalid workflow.json');
+  }
+  const entry = manifest.entrypoints[body.entrypoint];
+  if (!entry || typeof entry !== 'object') throw new Error(`unknown manifest entrypoint ${body.entrypoint}`);
+  if (typeof entry.binary !== 'string' || !ALLOWED_BINARIES.has(entry.binary)) {
+    throw new Error(`manifest binary not allowed: ${String(entry.binary)}`);
+  }
+  const specs = entry.args ?? {};
+  const unknown = Object.keys(body.values).filter((name) => !(name in specs));
+  if (unknown.length) throw new Error(`unknown entrypoint arguments: ${unknown.join(', ')}`);
+  const script = entry.script === undefined ? undefined : safeScript(dir, entry.script);
+  if (entry.fixedArgs !== undefined && (!Array.isArray(entry.fixedArgs) || !entry.fixedArgs.every((arg) => typeof arg === 'string'))) {
+    throw new Error('manifest fixedArgs must be strings');
+  }
+  const args = [
+    ...(script ? [script] : []),
+    ...(entry.fixedArgs ?? []),
+    ...Object.entries(specs).flatMap(([name, spec]) => argumentValue(name, spec, body.values[name])),
+  ];
+  return { binary: entry.binary, args, timeout: boundedTimeout(body.timeout ?? entry.timeoutMs), mode: 'manifest', ...(script ? { script } : {}) };
+}
+
+/** Run a manifest or legacy command inside one already-authorized skill directory. */
+export async function runInDirectory(dir: string, body: ExecRequest): Promise<unknown> {
   try {
-    const result = await execFileAsync(binary, args, {
+    const invocation = await resolveManifestInvocation(dir, body);
+    const guardError = interpreterGuardError(dir, invocation.binary, invocation.args);
+    if (guardError) throw new Error(guardError);
+    if (invocation.script) await access(resolve(dir, invocation.script));
+    const result = await execFileAsync(invocation.binary, invocation.args, {
       cwd: dir,
-      timeout,
+      timeout: invocation.timeout,
       maxBuffer: MAX_OUTPUT_BYTES,
       env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' },
     });
     return {
       ok: true,
+      mode: invocation.mode,
       exitCode: 0,
       stdout: truncateOutput(result.stdout),
       stderr: truncateOutput(result.stderr),
@@ -148,6 +261,18 @@ async function runInSkillDir(slug: string, body: ExecRequest): Promise<unknown> 
       error: err.message ?? String(error),
     };
   }
+}
+
+async function runInSkillDir(slug: string, body: ExecRequest): Promise<unknown> {
+  const root = skillFilesRoot();
+  const dir = skillDirFor(root, slug);
+  if (!dir) return { error: `invalid skill slug "${slug}"` };
+  try {
+    await access(join(dir, 'SKILL.md'));
+  } catch {
+    return { error: `skill "${slug}" is not installed (no SKILL.md in ${dir})` };
+  }
+  return runInDirectory(dir, body);
 }
 
 export function skillExecPlugin(): Plugin {

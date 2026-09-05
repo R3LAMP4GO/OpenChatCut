@@ -19,6 +19,8 @@ export interface PackTranscriptOptions {
   sourceItemId: string;
   silenceThresholdMs?: number;
   maxWordsPerPhrase?: number;
+  /** Split after sentence-ending ASR punctuation, preserving exact word ranges. */
+  splitOnSentence?: boolean;
   /** Optional playback-order subset of indices into `words`. */
   wordIndices?: number[];
 }
@@ -126,7 +128,8 @@ export function packTranscriptPhrases(
     const split = gap < 0
       || gap >= silenceThresholdMs
       || speakerChanged
-      || current.length >= maxWordsPerPhrase;
+      || current.length >= maxWordsPerPhrase
+      || (options.splitOnSentence === true && /[.!?…]$/u.test(previous.text.trim()));
     if (split) {
       flush();
       silenceBefore = Math.max(0, gap);

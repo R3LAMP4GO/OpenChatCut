@@ -7,11 +7,13 @@ import { wordTimelineFrame } from './edit';
 import { preferredTranscriptionProvider } from './provider';
 import { hasOperationalTranscript, type TranscriptWord } from './types';
 import { analyzeSilences } from './segment';
+import { normalizeSelectedWordIndexes } from './selectedWords';
 import { ScriptView } from './TranscriptViews';
 import { theme } from '../theme';
 import { Icon } from '../components/icons';
 import { useT } from '../i18n/locale';
 import { clipLabel, isLikelyNonSpeech, mediaOnTrack, pickDefaultTrack, trackTitle, type TranscriptTrackOption } from './trackOptions';
+import { TranscriptTakeReview, type TakeWordHighlight } from '../takes/TranscriptTakeReview';
 
 export type { TranscriptTrackOption } from './trackOptions';
 
@@ -23,6 +25,7 @@ interface TranscriptPanelProps {
   trackOptions: TranscriptTrackOption[];
   onSetItemTranscript: (id: string, words: TranscriptWord[]) => void;
   onToggleWord: (id: string, idx: number) => void;
+  onDeleteWords: (id: string, indexes: number[]) => void;
   onCleanScript: (id: string, opts: { silenceFrames?: number; removeFillers: boolean }) => void;
   onSetGapCap: (id: string, afterWordIndex: number, maxMs: number | null) => void;
   onSetTranscriptPlayOrder: (id: string, playOrder: number[] | null) => void;
@@ -36,11 +39,13 @@ const MANY_CLIPS = 10;
 
 export function TranscriptPanel({
   playerRef, fps, items, trackOptions,
-  onSetItemTranscript, onToggleWord, onCleanScript, onSetGapCap, onSetTranscriptPlayOrder, onReorderTrackItems, onClearEdits,
+  onSetItemTranscript, onToggleWord, onDeleteWords, onCleanScript, onSetGapCap, onSetTranscriptPlayOrder, onReorderTrackItems, onClearEdits,
   onImportSrt, onOpenCaptionStyles,
 }: TranscriptPanelProps) {
   const t = useT();
   const { status, error, progressNote, runMany, reset } = useTranscript();
+  const [takeHighlights, setTakeHighlights] = useState<ReadonlyMap<number, TakeWordHighlight>>(() => new Map());
+  const [selectedWords, setSelectedWords] = useState<{ itemId: string; indexes: number[] } | null>(null);
   const localProvider = preferredTranscriptionProvider() === 'local';
   const defaultId = useMemo(() => pickDefaultTrack(trackOptions, items), [trackOptions, items]);
   const [track, setTrack] = useState<TrackId | null>(defaultId);
@@ -109,9 +114,13 @@ export function TranscriptPanel({
   // Selection mode: a native text selection over the word spans becomes a
   // transcript-selection reference (word id / text / source media ms + keptSegments frame map).
   const pickFromDomSelection = () => {
-    if (!pickMode || !bodyRef.current) return;
+    if (!bodyRef.current) return;
     const reference = transcriptRefFromDomSelection(bodyRef.current, clips, fps);
-    if (reference) emitSelectionRef(reference);
+    if (!reference || reference.kind !== 'transcript-selection') return;
+    if (pickMode) { emitSelectionRef(reference); return; }
+    const item = clips.find((clip) => clip.id === reference.metadata.itemId);
+    const indexes = item ? normalizeSelectedWordIndexes(reference.metadata.selectedWordIds, item.transcript?.length ?? 0, new Set(item.deletedWordIdx ?? [])) : [];
+    setSelectedWords(indexes.length ? { itemId: reference.metadata.itemId, indexes } : null);
   };
 
   const transcribeTrack = async () => {
@@ -208,6 +217,12 @@ export function TranscriptPanel({
         )}
       </div>
 
+      {selectedWords && <div className="cc-tx-selection-action" role="status">
+        <span>{t('已选择 {count} 个词', { count: selectedWords.indexes.length })}</span>
+        <button type="button" className="cc-tx-btn primary sm" onClick={() => { onDeleteWords(selectedWords.itemId, selectedWords.indexes); setSelectedWords(null); }}>{t('删除所选词')}</button>
+        <button type="button" className="cc-tx-btn sm" onClick={() => setSelectedWords(null)}>{t('取消')}</button>
+      </div>}
+
       {/* Track chips — alias · name, never bare UUID */}
       <div className="cc-tx-tracks" role="tablist" aria-label={t('转写轨道')}>
         {selectable.length === 0 ? (
@@ -234,6 +249,8 @@ export function TranscriptPanel({
           })
         )}
       </div>
+
+      {editable && focusItem && <TranscriptTakeReview item={focusItem} fps={fps} playerRef={playerRef} onDeleteWords={onDeleteWords} onHighlights={setTakeHighlights} />}
 
       {editMode && editable && focusItem && (
         <div className="cc-tx-editbar">
@@ -431,6 +448,8 @@ export function TranscriptPanel({
                         silenceFrames={c.silenceFrames}
                         playOrder={c.transcriptPlayOrder}
                         minDisplayMs={minDisplayMs}
+                        takeHighlights={active ? takeHighlights : undefined}
+                        selectedWordIndexes={active && selectedWords?.itemId === c.id ? new Set(selectedWords.indexes) : undefined}
                         onWord={(w) => {
                           if (pickMode) return; // selection mode: words are for drag-select, not seek/delete
                           if (!operational) return;

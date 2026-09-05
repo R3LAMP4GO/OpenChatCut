@@ -71,6 +71,18 @@ assert.equal(usesEditedWordFlow({ deletedWordIdx: [1] }), true, 'a word edit reb
   ]);
 }
 
+// ── 删词/删间隙的画面切段回归:渲染层应直接使用这些 source 区间 ──────────────
+{
+  assert.deepEqual(keptSegments(W, new Set([1]), FPS, 0), [
+    { srcStartFrame: 0, srcEndFrame: 10, fromFrame: 0, durFrames: 10 },
+    { srcStartFrame: 30, srcEndFrame: 50, fromFrame: 10, durFrames: 20 },
+  ], 'deleted words leave no source-video segment');
+  assert.deepEqual(keptSegments(W, none, FPS, 0, { gapCapsMs: { '2': 0 } }), [
+    { srcStartFrame: 0, srcEndFrame: 20, fromFrame: 0, durFrames: 20 },
+    { srcStartFrame: 30, srcEndFrame: 50, fromFrame: 20, durFrames: 20 },
+  ], 'deleted gap leaves no source-video segment');
+}
+
 // ── 越界窗口自愈:超出流长 → 空;editedFrames 兜底 1 ─────────────────────
 {
   const segs = keptSegments(W, none, FPS, 0, { window: { startFrame: 60, durFrames: 10 } });
